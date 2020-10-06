@@ -12,55 +12,52 @@ namespace SnLiveExportImport
 {
     public static class ContentMetaData
     {
-        public enum FieldSubType
-        {
-            General, ContentList
-        }
-
         public static bool SetFields(Content content, ImportContext context)
         {
-            bool changed = context.IsNewContent;
-            
+            // import fields
             foreach (XmlNode fieldNode in context.FieldData)
             {
-                var subType = FieldSubType.General;
-                var subTypeString = ((XmlElement)fieldNode).GetAttribute("subType");
-                if (subTypeString.Length > 0)
-                    subType = (FieldSubType)Enum.Parse(typeof(FieldSubType), subTypeString);
-                var fieldName = fieldNode.LocalName; //Field.ParseImportName(fieldNode.LocalName, subType);
+                var fieldName = fieldNode.LocalName; 
 
                 var attachment = ((XmlElement)fieldNode).GetAttribute("attachment");
 
-                // This field has already imported or skipped
+                // TODO: test aspect fields if have to created first
+
+                // Technical field so skip it
                 if (fieldName == "Aspects")
                     continue;
 
-                // TODO: special types, and binary wont work for now
+                // TODO: special types wont work for now
                 string[] skipTemporarily = { "AllowedChildTypes", "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
 
-                //Name, DisplayName, Body, Int, Date, single Reference all works with text
+                // attachment means binary in given file, so we will upload it
                 if (!string.IsNullOrWhiteSpace(attachment))
                 {
-                    try
+                    // but if new content, it's already uploaded at creation
+                    if (!context.IsNewContent)
                     {
-                        string filePath = Path.Combine(context.CurrentDirectory, attachment);
-                        using (FileStream fs = File.OpenRead(filePath))
+                        try
                         {
-                            content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+                            string filePath = Path.Combine(context.CurrentDirectory, attachment);
+                            using (FileStream fs = File.OpenRead(filePath))
+                            {
+                                content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+                            }
                         }
-                    } catch (Exception ex)
-                    {
-                        Log.Error(ex.Message);
+                        catch (Exception ex)
+                        {
+                            Log.Error($"{content.Name}: {attachment}, {ex.Message}, {ex.InnerException?.Message}");
+                        }
                     }
-                } else {
+                }
+                else
+                {
+                    // Simple types (Name, DisplayName, Body, Int, Date, single Reference) all works with innertext
                     content[fieldName] = fieldNode.InnerText;
                 }
             }
-
-            if (!changed)
-                return true;
 
             return true;
         }

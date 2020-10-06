@@ -174,9 +174,7 @@ namespace SnLiveExportImport
                     {
                         var setResult = contentInfo.SetMetadata(content, currentDir, isNewContent, validate, false);
 
-                        // TODO: binary update wont work here
-                        //if (!fileTypes.Any(f => f == contentInfo.ContentTypeName))
-                            await content.SaveAsync();
+                        await content.SaveAsync();
                     }
                     catch (Exception e)
                     {
