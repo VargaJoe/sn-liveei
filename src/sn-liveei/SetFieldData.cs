@@ -29,18 +29,34 @@ namespace SnLiveExportImport
                     subType = (FieldSubType)Enum.Parse(typeof(FieldSubType), subTypeString);
                 var fieldName = fieldNode.LocalName; //Field.ParseImportName(fieldNode.LocalName, subType);
 
+                var attachment = ((XmlElement)fieldNode).GetAttribute("attachment");
+
                 // This field has already imported or skipped
                 if (fieldName == "Aspects")
                     continue;
 
-                var rawValue = fieldNode.InnerXml;
                 // TODO: special types, and binary wont work for now
-                string[] skipTemporarily = { "AllowedChildTypes", "GroupAttachments", "NotificationMode", "ImageData", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
+                string[] skipTemporarily = { "AllowedChildTypes", "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
 
                 //Name, DisplayName, Body, Int, Date, single Reference all works with text
-                content[fieldName] = fieldNode.InnerText;
+                if (!string.IsNullOrWhiteSpace(attachment))
+                {
+                    try
+                    {
+                        string filePath = Path.Combine(context.CurrentDirectory, attachment);
+                        using (FileStream fs = File.OpenRead(filePath))
+                        {
+                            content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+                        }
+                    } catch (Exception ex)
+                    {
+                        Log.Error(ex.Message);
+                    }
+                } else {
+                    content[fieldName] = fieldNode.InnerText;
+                }
             }
 
             if (!changed)

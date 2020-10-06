@@ -12,6 +12,7 @@ namespace SnLiveExportImport
     public static class LiveImport
     {
         public static string ContentTypesFolderPath = "/Root/System/Schema/ContentTypes";
+        public static string[] fileTypes = { "File", "Image" };
 
         public static async System.Threading.Tasks.Task ImportContentAsync()
         {
@@ -174,7 +175,7 @@ namespace SnLiveExportImport
                         var setResult = contentInfo.SetMetadata(content, currentDir, isNewContent, validate, false);
 
                         // TODO: binary update wont work here
-                        if (contentInfo.ContentTypeName != "File" && contentInfo.ContentTypeName != "Image")
+                        //if (!fileTypes.Any(f => f == contentInfo.ContentTypeName))
                             await content.SaveAsync();
                     }
                     catch (Exception e)
@@ -198,8 +199,6 @@ namespace SnLiveExportImport
 
         private static async System.Threading.Tasks.Task<Content> CreateOrLoadContentAsync(ContentInfo contentInfo, Content targetRepoParent, bool isNewContent)
         {
-            string[] fileTypes = { "File", "Image" };
-
             string path = RepositoryPath.Combine(targetRepoParent.Path, contentInfo.Name);
             Content content = await Content.LoadAsync(path);
             if (content == null)
@@ -208,7 +207,6 @@ namespace SnLiveExportImport
                 if (!fileTypes.Any(f => f == contentInfo.ContentTypeName))
                 {
                     content = Content.CreateNew(targetRepoParent.Path, contentInfo.ContentTypeName, contentInfo.Name);
-                    isNewContent = true;
                 } 
                 else
                 {
@@ -216,7 +214,8 @@ namespace SnLiveExportImport
                     {
                         content = await Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName);
                     }
-                }                
+                }
+                isNewContent = true;
             }
             else
             {
