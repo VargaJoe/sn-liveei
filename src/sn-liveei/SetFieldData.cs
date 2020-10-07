@@ -28,10 +28,23 @@ namespace SnLiveExportImport
                     continue;
 
                 // TODO: special types wont work for now
-                string[] skipTemporarily = { "AllowedChildTypes", "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
+                string[] skipTemporarily = { "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
 
+                // if (fieldNode.InnerXml.StartsWith("<Path>"))
+                // {
+                //     var isReference = true;
+                // }
+                // else
+                if (fieldName == "AllowedChildTypes")
+                {
+                    string[] notAllowedToModify = { "SystemFolder" };
+                    if (!notAllowedToModify.Any(x => x == context.ContentType))
+                    {
+                        content[fieldName] = fieldNode.InnerText.Split(", ");
+                    }
+                } else
                 // attachment means binary in given file, so we will upload it
                 if (!string.IsNullOrWhiteSpace(attachment))
                 {
@@ -56,6 +69,8 @@ namespace SnLiveExportImport
                 {
                     // Simple types (Name, DisplayName, Body, Int, Date, single Reference) all works with innertext
                     content[fieldName] = fieldNode.InnerText;
+
+                    // TODO: BUT reference field not should be updated at first round, only after when all the content is present in repository
                 }
             }
 

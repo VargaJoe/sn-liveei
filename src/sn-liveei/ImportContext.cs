@@ -18,14 +18,16 @@ namespace SnLiveExportImport
 		{
 			get { return PostponedReferenceFields.Count > 0; }
 		}
+		public string ContentType { get; set; }
 
-		public ImportContext(XmlNodeList fieldData, string currentDirectory, bool isNewContent, bool needToValidate, bool updateReferences)
+		public ImportContext(XmlNodeList fieldData, string contentType, string currentDirectory, bool isNewContent, bool needToValidate, bool updateReferences)
 		{
 			CurrentDirectory = currentDirectory;
 			FieldData = fieldData;
 			IsNewContent = isNewContent;
 			NeedToValidate = needToValidate;
 			UpdateReferences = updateReferences;
+			ContentType = contentType;
 			PostponedReferenceFields = new List<string>();
 		}
 
