@@ -28,7 +28,7 @@ namespace SnLiveExportImport
                     continue;
 
                 // TODO: special types wont work for now
-                string[] skipTemporarily = { "CreatedBy", "ModifiedBy", "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
+                string[] skipTemporarily = { "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
 
