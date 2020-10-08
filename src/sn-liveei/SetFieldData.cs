@@ -32,12 +32,25 @@ namespace SnLiveExportImport
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
 
-                // if (fieldNode.InnerXml.StartsWith("<Path>"))
-                // {
-                //     var isReference = true;
-                // }
-                // else
-                if (fieldName == "AllowedChildTypes")
+                var xmlNodeList = fieldNode.SelectNodes("*");
+
+                // TODO: check if xmlnodelist is only available with reference field or should filter for Path nodes                
+                //if (fieldNode.InnerXml.StartsWith("<Path>"))
+                if (xmlNodeList.Count > 0)
+                {                    
+                    if (!context.UpdateReferences)
+                    {
+                        if (xmlNodeList.Count > 0 || fieldNode.InnerText.Trim().Length > 0)
+                            context.PostponedReferenceFields.Add(fieldName);
+                    }
+                    else
+                    {
+                        // TODO: test with multiple reference
+                        content[fieldName] = fieldNode.InnerText;
+                    }
+                }
+                else
+               if (fieldName == "AllowedChildTypes")
                 {
                     string[] notAllowedToModify = { "SystemFolder" };
                     if (!notAllowedToModify.Any(x => x == context.ContentType))

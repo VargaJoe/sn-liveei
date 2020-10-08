@@ -58,7 +58,7 @@ namespace SnLiveExportImport.ContentImporter
             {
                 if (_transferringContext == null)
                     return false;
-                return false; //_transferringContext.HasReference;
+                return _transferringContext.HasReference;
             }
         }
         public bool HasPermissions { get; private set; }
@@ -185,10 +185,29 @@ namespace SnLiveExportImport.ContentImporter
             if (_xmlDoc == null)
                 return true;
             _transferringContext = new ImportContext(
-                _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), currentDirectory, isNewContent, needToValidate, updateReferences);
+                _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, currentDirectory, isNewContent, needToValidate, updateReferences);
+
             bool result = ContentMetaData.SetFields(content, _transferringContext);
             _contentId = content.Id;
             return result;
+        }
+
+        public bool UpdateReferences(Content content, bool needToValidate)
+        {
+            if (_transferringContext == null)
+                _transferringContext = new ImportContext(_xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, null, false, needToValidate, true);
+            else
+                _transferringContext.UpdateReferences = true;
+
+            if (!ContentMetaData.SetFields(content, _transferringContext))
+                return false;
+            if (!HasPermissions && !HasBreakPermissions)
+                return true;
+            
+            //var permissionsNode = _xmlDoc.SelectSingleNode("/ContentMetaData/Permissions");
+            // here should import Permissions(permissionsNode, this._metaDataPath);
+
+            return true;
         }
 
         private static string GetContentTypeName(string fileName)

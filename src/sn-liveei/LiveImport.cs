@@ -13,9 +13,12 @@ namespace SnLiveExportImport
     {
         public static string ContentTypesFolderPath = "/Root/System/Schema/ContentTypes";
         public static string[] fileTypes = { "File", "Image" };
+        private static string continueFrom; 
 
         public static async System.Threading.Tasks.Task ImportContentAsync()
         {
+            CreateRefLog(continueFrom == null);
+
             // TODO: get variables from parameters and/or settings
             string targetRepoParentPath = "/Root";
             string targetRepoPath = "/Root/Content";
@@ -86,8 +89,21 @@ namespace SnLiveExportImport
 
             try
             {
+                // list for tasks after content import
                 List<ContentInfo> postponedList = new List<ContentInfo>();
+
+                // first round create or update contents 
                 await TreeWalkerAsync(srcPath, pathIsFile, importTarget, "  ", postponedList, validate);
+
+                // after all contents are imported can references updated
+                if (postponedList.Count != 0)
+                    UpdateReferences(/*postponedList*/validate);
+
+                //foreach (var site in sites.Nodes)
+                //{
+                //    site.Security.SetPermission(User.Visitor, true, PermissionType.RunApplication, PermissionValue.Allow);
+                //}
+
             }
             catch (Exception e)
             {
@@ -178,8 +194,23 @@ namespace SnLiveExportImport
                     }
                     catch (Exception e)
                     {
-                        Log.Error($"{e.Message}, {contentInfo.MetaDataPath}");
+                        Log.Error($"{e.Message}, {e.InnerException?.Message}, {contentInfo.MetaDataPath}");
                         return;
+                    }
+
+                    // gather security change iformation
+                    if (contentInfo.ClearPermissions)
+                    {
+                        // here should RemoveExplicitEntries from content
+                        if (!(contentInfo.HasReference || contentInfo.HasPermissions || contentInfo.HasBreakPermissions))
+                        {
+                            // here should RemoveBreakInheritance from content
+                        }
+                    }
+                    if (contentInfo.HasReference || contentInfo.HasPermissions || contentInfo.HasBreakPermissions)
+                    {
+                        LogWriteReference(contentInfo);
+                        postponedList.Add(contentInfo);
                     }
                 }
 
@@ -222,5 +253,127 @@ namespace SnLiveExportImport
 
             return content;
         }
+
+        private static void UpdateReferences(bool validate)
+        {
+            LogWriteLine("=========================== Update references");
+
+            var idList = new List<int>();
+            using (var reader = new StreamReader(_refLogFilePath))
+            {
+                while (!reader.EndOfStream)
+                {
+                    var s = reader.ReadLine();
+                    var sa = s.Split('\t');
+                    var id = int.Parse(sa[0]);
+                    var path = sa[1];
+                    if (idList.Contains(id))
+                        continue;
+                    UpdateReference(id, path, validate);
+                    idList.Add(id);
+                }
+            }
+
+            //LogWriteLine();
+        }
+        private static void UpdateReference(int contentId, string metadataPath, bool validate)
+        {
+            var contentInfo = new ContentInfo(metadataPath);
+
+            LogWriteLine($"  {contentInfo.Name}");
+
+            Content content = Content.LoadAsync(contentId).GetAwaiter().GetResult();
+            if (content != null)
+            {
+                try
+                {
+                    if (!contentInfo.UpdateReferences(content, validate));
+                    //PrintFieldErrors(content, contentInfo.MetaDataPath);
+                }
+                catch (Exception e)
+                {
+                    PrintException(e, contentInfo.MetaDataPath);
+                }
+            }
+            else
+            {
+                LogWriteLine($"---------- " +
+                    $"Content does not exist. MetaDataPath: {contentInfo.MetaDataPath}, " +
+                    $"ContentId: {contentInfo.ContentId}, " +
+                    $"ContentTypeName: {contentInfo.ContentTypeName}");
+            }
+        }
+
+        private static string _refLogFilePath;//= Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "import.reflog");
+
+        public static void LogWriteReference(ContentInfo contentInfo)
+        {
+            using (StreamWriter writer = new StreamWriter(_refLogFilePath, true))
+            {
+                WriteToRefLog(writer, contentInfo.ContentId, '\t', contentInfo.MetaDataPath);
+            }
+        }
+        private static void CreateRefLog(bool createNew)
+        {
+            _refLogFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "import.reflog");
+            if (!File.Exists(_refLogFilePath) || createNew)
+            {
+                using (FileStream fs = new FileStream(_refLogFilePath, FileMode.Create))
+                {
+                    using (StreamWriter wr = new StreamWriter(fs))
+                    {
+                        // do nothing
+                    }
+                }
+            }
+        }
+        private static void WriteToRefLog(StreamWriter writer, params object[] values)
+        {
+            foreach (object value in values)
+            {
+                //Console.Write(value);
+                writer.Write(value);
+            }
+            //Console.WriteLine();
+            writer.WriteLine();
+        }
+        private static void CloseLog(StreamWriter writer)
+        {
+            writer.Flush();
+            writer.Close();
+        }
+
+        //Start of Logging
+        private static void LogWriteLine(params object[] path)
+        {
+            Log.Information(string.Concat(string.Join(",", path)));
+        }
+
+        private static void PrintException(Exception e, string path)
+        {
+            //exceptions++;
+            LogWriteLine("========== Exception:");
+            if (!String.IsNullOrEmpty(path))
+            {
+                LogWriteLine("Path: ", path);
+                LogWriteLine("---------------------");
+            }
+
+            WriteEx(e);
+            while ((e = e.InnerException) != null)
+            {
+                LogWriteLine("---- Inner Exception:");
+                WriteEx(e);
+            }
+            LogWriteLine("=====================");
+        }
+
+        private static void WriteEx(Exception e)
+        {
+            LogWriteLine($"{e.GetType().Name}: {e.Message}");
+            LogWriteLine(e.StackTrace);
+        }
+
+        ////End of Logging
     }
 }
