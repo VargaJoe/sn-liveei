@@ -15,7 +15,7 @@ namespace SnLiveExportImport
         public static string[] fileTypes = { "File", "Image" };
         private static string continueFrom; 
 
-        public static async System.Threading.Tasks.Task ImportContentAsync()
+        public static void ImportContent()
         {
             CreateRefLog(continueFrom == null);
 
@@ -49,10 +49,10 @@ namespace SnLiveExportImport
                 Log.Information($"file does not exists: {fsPath}.Content");
             }
 
-            await ImportContentsAsync(fsPath, targetRepoPath, validate);
+            ImportContents(fsPath, targetRepoPath, validate);
         }
 
-        private static async System.Threading.Tasks.Task ImportContentsAsync(string srcPath, string targetPath, bool validate)
+        private static void ImportContents(string srcPath, string targetPath, bool validate)
         {
             bool pathIsFile = false;
             if (File.Exists(srcPath))
@@ -71,20 +71,21 @@ namespace SnLiveExportImport
             Log.Information("=================== Continuing Import ========================");
             Log.Information($"From: {srcPath}" );
             Log.Information($"To:   {targetPath}");
+            //if (_continueFrom != null)
+            //    Log.Information($"Continuing from: {_continueFrom}");
+            //if (!validate)
+            //    Log.Information("Content validation: OFF");
             Log.Information("==============================================================");
 
             if (targetPath != null)
             {
-                importTarget = await Content.LoadAsync(targetPath);
+                importTarget = Content.LoadAsync(targetPath).GetAwaiter().GetResult();
                 if (importTarget == null)
                 {
                     Log.Warning("Target container was not found: ");
                     Log.Information(targetPath);
                     return;
                 }
-            } else
-            {
-                await Content.LoadAsync("/Root");
             }
 
             try
@@ -93,7 +94,7 @@ namespace SnLiveExportImport
                 List<ContentInfo> postponedList = new List<ContentInfo>();
 
                 // first round create or update contents 
-                await TreeWalkerAsync(srcPath, pathIsFile, importTarget, "  ", postponedList, validate);
+                TreeWalker(srcPath, pathIsFile, importTarget, "  ", postponedList, validate);
 
                 // after all contents are imported can references updated
                 if (postponedList.Count != 0)
@@ -107,13 +108,13 @@ namespace SnLiveExportImport
             }
             catch (Exception e)
             {
-                Log.Error(e, null);
+                PrintException(e, null);
             }
 
             Log.Information("========================================");
         }
 
-        private static async System.Threading.Tasks.Task TreeWalkerAsync(string path, bool pathIsFile, Content folder, string indent, List<ContentInfo> postponedList, bool validate)
+        private static void TreeWalker(string path, bool pathIsFile, Content folder, string indent, List<ContentInfo> postponedList, bool validate)
         {
 
             if (!string.IsNullOrWhiteSpace(folder.Path) && folder.Path.StartsWith(ContentTypesFolderPath))
@@ -161,12 +162,25 @@ namespace SnLiveExportImport
             {
                 var continuing = false;
                 var stepDown = true;
+                if (continueFrom != null)
+                {
+                    continuing = true;
+                    if (contentInfo.MetaDataPath == continueFrom)
+                    {
+                        continueFrom = null;
+                        continuing = false;
+                    }
+                    else
+                    {
+                        stepDown = continueFrom.StartsWith(contentInfo.MetaDataPath);
+                    }
+                }
 
                 bool isNewContent = true;
                 Content content = null;
                 try
                 {
-                    content = await CreateOrLoadContentAsync(contentInfo, folder, isNewContent);
+                    content = CreateOrLoadContent(contentInfo, folder, isNewContent);
                 } 
                 catch (Exception ex)
                 {
@@ -189,8 +203,6 @@ namespace SnLiveExportImport
                     try
                     {
                         var setResult = contentInfo.SetMetadata(content, currentDir, isNewContent, validate, false);
-
-                        await content.SaveAsync();
                     }
                     catch (Exception e)
                     {
@@ -220,35 +232,32 @@ namespace SnLiveExportImport
                     if (contentInfo.IsFolder)
                     {
                         if (content != null)
-                            await TreeWalkerAsync(contentInfo.ChildrenFolder, false, content, indent + "  ", postponedList, validate);
+                            TreeWalker(contentInfo.ChildrenFolder, false, content, indent + "  ", postponedList, validate);
                     }
                 }
             }
         }
 
-        private static async System.Threading.Tasks.Task<Content> CreateOrLoadContentAsync(ContentInfo contentInfo, Content targetRepoParent, bool isNewContent)
+        private static Content CreateOrLoadContent(ContentInfo contentInfo, Content targetRepoParent, bool isNewContent)
         {
             string path = RepositoryPath.Combine(targetRepoParent.Path, contentInfo.Name);
-            Content content = await Content.LoadAsync(path);
+            isNewContent = false;
+            Content content = Content.LoadAsync(path).GetAwaiter().GetResult();
             if (content == null)
             {
                 // need list of nodetypes descended from file
                 if (!fileTypes.Any(f => f == contentInfo.ContentTypeName))
                 {
                     content = Content.CreateNew(targetRepoParent.Path, contentInfo.ContentTypeName, contentInfo.Name);
+                    isNewContent = true;
                 } 
                 else
                 {
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
-                        content = await Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName);
+                        content = Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
                     }
-                }
-                isNewContent = true;
-            }
-            else
-            {
-                isNewContent = false;
+                }                
             }
 
             return content;
@@ -287,8 +296,10 @@ namespace SnLiveExportImport
             {
                 try
                 {
-                    if (!contentInfo.UpdateReferences(content, validate));
-                    //PrintFieldErrors(content, contentInfo.MetaDataPath);
+                    if (contentInfo.UpdateReferences(content, validate))
+                    {
+                        content.SaveAsync().GetAwaiter().GetResult();
+                    }
                 }
                 catch (Exception e)
                 {
@@ -352,26 +363,26 @@ namespace SnLiveExportImport
         private static void PrintException(Exception e, string path)
         {
             //exceptions++;
-            LogWriteLine("========== Exception:");
+            Log.Error("========== Exception:");
             if (!String.IsNullOrEmpty(path))
             {
-                LogWriteLine("Path: ", path);
-                LogWriteLine("---------------------");
+                Log.Error($"Path: {path}");
+                Log.Error("---------------------");
             }
 
             WriteEx(e);
             while ((e = e.InnerException) != null)
             {
-                LogWriteLine("---- Inner Exception:");
+                Log.Error("---- Inner Exception:");
                 WriteEx(e);
             }
-            LogWriteLine("=====================");
+            Log.Error("=====================");
         }
 
         private static void WriteEx(Exception e)
         {
-            LogWriteLine($"{e.GetType().Name}: {e.Message}");
-            LogWriteLine(e.StackTrace);
+            Log.Error($"{e.GetType().Name}: {e.Message}");
+            Log.Error(e.StackTrace);
         }
 
         ////End of Logging

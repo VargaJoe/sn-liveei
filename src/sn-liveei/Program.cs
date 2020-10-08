@@ -41,7 +41,7 @@ namespace SnLiveExportImport
             {
                 Log.Information("Starting host...");
 
-                LiveImport.ImportContentAsync().GetAwaiter().GetResult(); 
+                LiveImport.ImportContent();
 
                 return 0;
             }

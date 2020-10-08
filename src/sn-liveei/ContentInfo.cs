@@ -188,6 +188,7 @@ namespace SnLiveExportImport.ContentImporter
                 _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, currentDirectory, isNewContent, needToValidate, updateReferences);
 
             bool result = ContentMetaData.SetFields(content, _transferringContext);
+            content.SaveAsync().GetAwaiter().GetResult();
             _contentId = content.Id;
             return result;
         }
