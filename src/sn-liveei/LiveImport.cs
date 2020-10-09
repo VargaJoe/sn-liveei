@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace SnLiveExportImport
 {
@@ -49,6 +50,8 @@ namespace SnLiveExportImport
                 Log.Information($"file does not exists: {fsPath}.Content");
             }
 
+            //SenseNet.Client.Importer.ImportAsync(fsPath, targetRepoPath).GetAwaiter().GetResult();
+            
             ImportContents(fsPath, targetRepoPath, validate);
         }
 
@@ -103,6 +106,7 @@ namespace SnLiveExportImport
             catch (Exception e)
             {
                 PrintException(e, null);
+                Thread.Sleep(1000);
             }
 
             Log.Information("========================================");
@@ -178,18 +182,21 @@ namespace SnLiveExportImport
                 } 
                 catch (Exception ex)
                 {
-                    Log.Error(ex.Message);
+                    Log.Error($"Exception on Load/Create, content: {contentInfo.MetaDataPath}, {ex.Message}, {ex.InnerException?.Message}");
+                    Thread.Sleep(1000);
+                    continue;
                 }
 
                 if (content == null)
                 {
-                    Log.Error($"content is null: {contentInfo.Name}");
-                    break;
+                    Log.Error($"After Load/Create content is null: {contentInfo.MetaDataPath}");
+                    continue;
                 }
 
                 isNewContent = string.IsNullOrWhiteSpace(content.Path);
                 if (!continuing)
                 {
+                    // TODO: show if file uploaded
                     string newOrUpdate = isNewContent ? "[new]" : "[update]";
 
                     Log.Information($"{indent} {contentInfo.Name} : {contentInfo.ContentTypeName} {newOrUpdate}");
@@ -204,12 +211,14 @@ namespace SnLiveExportImport
                         {
                             // TODO: should we try to save despite the mismatch or skip
                             Log.Error($"ContentType mismatch! Repo: '{realContentType}', Import source: '{contentInfo.ContentTypeName}'");
+                            Thread.Sleep(1000);
                         }
                     }
                     catch (Exception e)
                     {
-                        Log.Error($"{e.Message}, {e.InnerException?.Message}, {contentInfo.MetaDataPath}");
-                        return;
+                        Log.Error($"Error at SetMetaData: {contentInfo.MetaDataPath}, {e.Message} {e.InnerException?.Message}");
+                        Thread.Sleep(1000);
+                        continue;
                     }
 
                     // gather security change iformation
@@ -240,6 +249,7 @@ namespace SnLiveExportImport
                             TreeWalker(contentInfo.ChildrenFolder, false, content, indent + "  ", postponedList, validate);
                     }
                 }
+                Thread.Sleep(100);
             }
         }
 
@@ -260,7 +270,19 @@ namespace SnLiveExportImport
                 {
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
+                        //UploadData ud = new UploadData()
+                        //{
+                        //    UseChunk = true,
+                        //    FileName = contentInfo.Name,
+                        //    FileLength = fs.Length,
+                        //    ContentType = contentInfo.ContentTypeName
+                            
+                        //};
+
                         content = Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
+                        //content = RESTCaller.UploadAsync(fs, ud, targetRepoParent.Id).GetAwaiter().GetResult();
+                        
+                        
                     }
                 }                
             }
@@ -285,6 +307,8 @@ namespace SnLiveExportImport
                         continue;
                     UpdateReference(id, path, validate);
                     idList.Add(id);
+
+                    //Thread.Sleep(1000);
                 }
             }
 
@@ -309,6 +333,7 @@ namespace SnLiveExportImport
                 catch (Exception e)
                 {
                     PrintException(e, contentInfo.MetaDataPath);
+                    Thread.Sleep(1000);
                 }
             }
             else

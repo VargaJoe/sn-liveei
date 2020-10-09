@@ -1,11 +1,13 @@
 ﻿using SenseNet.Client;
 using Serilog;
 using SnLiveExportImport;
+using SnLiveExportImport.ContentImporter;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Xml;
 
 namespace SnLiveExportImport
@@ -28,7 +30,9 @@ namespace SnLiveExportImport
                     continue;
 
                 // TODO: special types wont work for now
-                string[] skipTemporarily = { "GroupAttachments", "NotificationMode", "InheritableApprovingMode", "InheritableVersioningMode", "ApprovingMode", "VersioningMode" };
+                string[] skipTemporarily = { "GroupAttachments", "NotificationMode", "InheritableApprovingMode", 
+                    "InheritableVersioningMode", "ApprovingMode", "VersioningMode", "Status", "Priority", "MemoType", 
+                    "SeeAlso", "TrashDisabled", "RateAvg", "NotificationMode", "Description" };
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
 
@@ -37,7 +41,7 @@ namespace SnLiveExportImport
                 
                 string[] setFirstTime = { "CreatedBy", "ModifiedBy" };
                 if (!context.UpdateReferences)
-                {                    
+                {
                     // reference field (I hope)
                     if (pathNodeList.Count > 0) //if (fieldNode.InnerXml.StartsWith("<Path>"))
                     {
@@ -46,8 +50,10 @@ namespace SnLiveExportImport
                         {
                             if (content.Id == 0)
                             {
-                                content[fieldName] = fieldNode.InnerText;
-                            } else
+                                if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
+                                    content[fieldName] = fieldNode.InnerText;
+                            }
+                            else
                             {
                                 continue;
                             }
@@ -85,14 +91,16 @@ namespace SnLiveExportImport
                             }
                             catch (Exception ex)
                             {
-                                Log.Error($"{content.Name}: {attachment}, {ex.Message}, {ex.InnerException?.Message}");
+                                Log.Error($"Error at binary update: {content.Name}, {attachment}, {ex.Message}, {ex.InnerException?.Message}");
+                                Thread.Sleep(1000);
                             }
                         }
                     }
                     else
                     {
                         // Simple types (Name, DisplayName, Body, Int, Date, single Reference) all works with innertext
-                        content[fieldName] = fieldNode.InnerText;
+                        if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
+                            content[fieldName] = fieldNode.InnerText;
 
                         // TODO: BUT reference field not should be updated at first round, only after when all the content is present in repository
                     }
@@ -109,7 +117,8 @@ namespace SnLiveExportImport
                     } 
                     else if (pathNodeList.Count == 1)
                     {
-                        content[fieldName] = fieldNode.InnerText;
+                        if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
+                            content[fieldName] = fieldNode.InnerText;
                     } 
                     else if (pathNodeList.Count > 1)
                     {

@@ -10,6 +10,7 @@ using SenseNet.Client;
 using Microsoft.Extensions.Configuration;
 using Serilog;
 using SenseNet.Client.Security;
+using System.Threading;
 
 namespace SnLiveExportImport.ContentImporter
 {
@@ -250,7 +251,11 @@ namespace SnLiveExportImport.ContentImporter
                 var propagationAttr = identityElement.GetAttribute("propagation");
                 var localOnly = propagationAttr == null ? false : propagationAttr.ToLowerInvariant() == "localonly";
                 if (String.IsNullOrEmpty(path))
-                    throw new Exception($"Missing or empty path attribute of the Identity element {identityElementIndex} . {metadataPath}");
+                {
+                    Log.Error($"Missing or empty path attribute of the Identity element {identityElementIndex} so skipped. {metadataPath}");
+                    Thread.Sleep(1000);
+                    continue;
+                }
                 //var pathCheck = Content.ExistsAsync(path).GetAwaiter().GetResult();
                 //if (pathCheck != RepositoryPath.PathResult.Correct)
                 //    throw ImportPermissionExceptionHelper(String.Concat("Invalid path of the Identity element ", identityElementIndex, ": ", path, " (", pathCheck, ")."), metadataPath, null);
@@ -258,7 +263,12 @@ namespace SnLiveExportImport.ContentImporter
                 // getting identity node
                 var identityNode = Content.LoadAsync(path).GetAwaiter().GetResult();
                 if (identityNode == null)
-                    throw new Exception($"Identity {identityElementIndex} was not found: {path}. {metadataPath}");
+                {
+                    //throw new Exception($"Identity {path} was not found: {path}. {metadataPath}");
+                    Log.Error($"Identity {identityElementIndex} was not found and so skipped: {path}. {metadataPath}");
+                    Thread.Sleep(1000);
+                    continue;
+                }
 
                 var spr = new SetPermissionRequest();
                 spr.Identity = identityNode.Path;
@@ -277,7 +287,7 @@ namespace SnLiveExportImport.ContentImporter
                             {
                                 if (permName == fieldInfo.Name)
                                 {
-                                    fieldInfo.SetValue(spr, SenseNet.Client.Security.PermissionValue.Allow);
+                                    fieldInfo.SetValue(spr, PermissionValue.Allow);
                                 }
                             }
                             break;
@@ -287,7 +297,7 @@ namespace SnLiveExportImport.ContentImporter
                             {
                                 if (permName == fieldInfo.Name)
                                 {
-                                    fieldInfo.SetValue(spr, SenseNet.Client.Security.PermissionValue.Deny);
+                                    fieldInfo.SetValue(spr, PermissionValue.Deny);
                                 }
                             }
                             break;
