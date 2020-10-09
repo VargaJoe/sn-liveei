@@ -26,7 +26,7 @@ namespace SnLiveExportImport
             bool sync = true; 
             bool validate = false;
 
-            string fsTargetRepoPath = $".{targetRepoPath}";
+            string fsTargetRepoPath = $".{targetRepoPath.Replace("/Root", "")}";
             string cbPath = (sync) ? Path.Combine(sourceBasePath, fsTargetRepoPath) : sourceBasePath;
             string fsPath = Path.GetFullPath(cbPath);
             
@@ -190,19 +190,27 @@ namespace SnLiveExportImport
                 if (content == null)
                 {
                     Log.Error($"content is null: {contentInfo.Name}");
+                    break;
                 }
 
                 isNewContent = string.IsNullOrWhiteSpace(content.Path);
                 if (!continuing)
                 {
                     string newOrUpdate = isNewContent ? "[new]" : "[update]";
-                    
-                    Log.Information($"{indent} {contentInfo.Name} : {contentInfo.ContentTypeName} {newOrUpdate} ");
+
+                    Log.Information($"{indent} {contentInfo.Name} : {contentInfo.ContentTypeName} {newOrUpdate}");
 
                     //-- SetMetadata without references. Return if the setting is false or exception was thrown.
                     try
                     {
                         var setResult = contentInfo.SetMetadata(content, currentDir, isNewContent, validate, false);
+
+                        var realContentType = content["Type"].ToString();
+                        if (contentInfo.ContentTypeName != realContentType)
+                        {
+                            // TODO: should we try to save despite the mismatch or skip
+                            Log.Error($"ContentType mismatch! Repo: '{realContentType}', Import source: '{contentInfo.ContentTypeName}'");
+                        }
                     }
                     catch (Exception e)
                     {

@@ -8,6 +8,7 @@ using System.Reflection;
 using System.Xml.Serialization;
 using SenseNet.Client;
 using Microsoft.Extensions.Configuration;
+using Serilog;
 
 namespace SnLiveExportImport.ContentImporter
 {
@@ -182,14 +183,18 @@ namespace SnLiveExportImport.ContentImporter
 
         public bool SetMetadata(Content content, string currentDirectory, bool isNewContent, bool needToValidate, bool updateReferences)
         {
-            if (_xmlDoc == null)
-                return true;
-            _transferringContext = new ImportContext(
-                _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, currentDirectory, isNewContent, needToValidate, updateReferences);
+            bool result = false;
+            if (_xmlDoc != null)
+            {
+                _transferringContext = new ImportContext(
+                    _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, currentDirectory, isNewContent, needToValidate, updateReferences);
 
-            bool result = ContentMetaData.SetFields(content, _transferringContext);
+                result = ContentMetaData.SetFields(content, _transferringContext);
+            }
+            
             content.SaveAsync().GetAwaiter().GetResult();
             _contentId = content.Id;
+
             return result;
         }
 
