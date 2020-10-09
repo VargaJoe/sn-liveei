@@ -99,12 +99,6 @@ namespace SnLiveExportImport
                 // after all contents are imported can references updated
                 if (postponedList.Count != 0)
                     UpdateReferences(/*postponedList*/validate);
-
-                //foreach (var site in sites.Nodes)
-                //{
-                //    site.Security.SetPermission(User.Visitor, true, PermissionType.RunApplication, PermissionValue.Allow);
-                //}
-
             }
             catch (Exception e)
             {
@@ -222,9 +216,12 @@ namespace SnLiveExportImport
                     if (contentInfo.ClearPermissions)
                     {
                         // here should RemoveExplicitEntries from content
+                        // TODO: how?
+
                         if (!(contentInfo.HasReference || contentInfo.HasPermissions || contentInfo.HasBreakPermissions))
                         {
-                            // here should RemoveBreakInheritance from content
+                           // here should RemoveBreakInheritance from content
+                           content.UnbreakInheritanceAsync();
                         }
                     }
                     if (contentInfo.HasReference || contentInfo.HasPermissions || contentInfo.HasBreakPermissions)

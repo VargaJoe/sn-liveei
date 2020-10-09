@@ -9,6 +9,7 @@ using System.Xml.Serialization;
 using SenseNet.Client;
 using Microsoft.Extensions.Configuration;
 using Serilog;
+using SenseNet.Client.Security;
 
 namespace SnLiveExportImport.ContentImporter
 {
@@ -210,8 +211,93 @@ namespace SnLiveExportImport.ContentImporter
             if (!HasPermissions && !HasBreakPermissions)
                 return true;
             
-            //var permissionsNode = _xmlDoc.SelectSingleNode("/ContentMetaData/Permissions");
+            var permissionsNode = _xmlDoc.SelectSingleNode("/ContentMetaData/Permissions");
             // here should import Permissions(permissionsNode, this._metaDataPath);
+            ImportPermissions(content, permissionsNode /*, this._metaDataPath*/);
+
+            return true;
+        }
+
+        private bool ImportPermissions(Content content, XmlNode permissionsNode /*, string metaDataPath*/)
+        {
+            string metadataPath = "";
+            // parsing and executing 'Break' and 'Clear'
+            var breakNode = permissionsNode.SelectSingleNode("Break");
+            var clearNode = permissionsNode.SelectSingleNode("Clear");
+            if (breakNode != null)
+            {
+                content.BreakInheritanceAsync();
+            }
+            else
+            {
+                content.UnbreakInheritanceAsync();
+            }
+            // executing 'Clear'
+            if (clearNode != null)
+            {
+                // TODO: how can RemoveExplicitEntries?
+            }
+
+            var identityElementIndex = 0;
+            List<SetPermissionRequest> sprList = new List<SetPermissionRequest>();
+
+            foreach (XmlElement identityElement in permissionsNode.SelectNodes("Identity"))
+            {
+                identityElementIndex++;
+
+                // checking identity path
+                var path = identityElement.GetAttribute("path");
+                var propagationAttr = identityElement.GetAttribute("propagation");
+                var localOnly = propagationAttr == null ? false : propagationAttr.ToLowerInvariant() == "localonly";
+                if (String.IsNullOrEmpty(path))
+                    throw new Exception($"Missing or empty path attribute of the Identity element {identityElementIndex} . {metadataPath}");
+                //var pathCheck = Content.ExistsAsync(path).GetAwaiter().GetResult();
+                //if (pathCheck != RepositoryPath.PathResult.Correct)
+                //    throw ImportPermissionExceptionHelper(String.Concat("Invalid path of the Identity element ", identityElementIndex, ": ", path, " (", pathCheck, ")."), metadataPath, null);
+
+                // getting identity node
+                var identityNode = Content.LoadAsync(path).GetAwaiter().GetResult();
+                if (identityNode == null)
+                    throw new Exception($"Identity {identityElementIndex} was not found: {path}. {metadataPath}");
+
+                var spr = new SetPermissionRequest();
+                spr.Identity = identityNode.Path;
+                spr.LocalOnly = localOnly;
+
+                // parsing value array
+                foreach (XmlElement permissionElement in identityElement.SelectNodes("*"))
+                {
+                    var permName = permissionElement.LocalName;
+                    
+                    switch (permissionElement.InnerText.ToLower())
+                    {
+                        case "allow":
+                        case "allowed":
+                            foreach (FieldInfo fieldInfo in spr.GetType().GetFields())
+                            {
+                                if (permName == fieldInfo.Name)
+                                {
+                                    fieldInfo.SetValue(spr, SenseNet.Client.Security.PermissionValue.Allow);
+                                }
+                            }
+                            break;
+                        case "deny":
+                        case "denied":
+                            foreach (FieldInfo fieldInfo in spr.GetType().GetFields())
+                            {
+                                if (permName == fieldInfo.Name)
+                                {
+                                    fieldInfo.SetValue(spr, SenseNet.Client.Security.PermissionValue.Deny);
+                                }
+                            }
+                            break;
+                        default:
+                            throw new Exception($"Invalid permission value in Identity {identityElementIndex}: {permissionElement.InnerText}. Allowed values: Allowed, Denied, {metadataPath}");
+                    }
+                }
+                sprList.Add(spr);
+            }
+            SecurityManager.SetPermissionsAsync(content.Id, sprList.ToArray());
 
             return true;
         }
