@@ -178,7 +178,7 @@ namespace SnLiveExportImport
                 Content content = null;
                 try
                 {
-                    content = CreateOrLoadContent(contentInfo, folder, isNewContent);
+                    content = CreateOrLoadContent(contentInfo, folder, ref isNewContent);
                 } 
                 catch (Exception ex)
                 {
@@ -193,7 +193,7 @@ namespace SnLiveExportImport
                     continue;
                 }
 
-                isNewContent = string.IsNullOrWhiteSpace(content.Path);
+                //isNewContent = string.IsNullOrWhiteSpace(content.Path);
                 if (!continuing)
                 {
                     // TODO: show if file uploaded
@@ -206,12 +206,12 @@ namespace SnLiveExportImport
                     {
                         var setResult = contentInfo.SetMetadata(content, currentDir, isNewContent, validate, false);
 
-                        var realContentType = content["Type"].ToString();
+                        // strange error
+                        var realContentType = content["Type"]?.ToString();
                         if (contentInfo.ContentTypeName != realContentType)
                         {
-                            // TODO: should we try to save despite the mismatch or skip
-                            Log.Error($"ContentType mismatch! Repo: '{realContentType}', Import source: '{contentInfo.ContentTypeName}'");
-                            Thread.Sleep(1000);
+                            // TODO: check why are there null contenttypes after uploadadync 
+                            //Log.Error($"ContentType mismatch! Repo: '{realContentType}', Import source: '{contentInfo.ContentTypeName}'");
                         }
                     }
                     catch (Exception e)
@@ -249,11 +249,11 @@ namespace SnLiveExportImport
                             TreeWalker(contentInfo.ChildrenFolder, false, content, indent + "  ", postponedList, validate);
                     }
                 }
-                Thread.Sleep(100);
+                Thread.Sleep(500);
             }
         }
 
-        private static Content CreateOrLoadContent(ContentInfo contentInfo, Content targetRepoParent, bool isNewContent)
+        private static Content CreateOrLoadContent(ContentInfo contentInfo, Content targetRepoParent, ref bool isNewContent)
         {
             string path = RepositoryPath.Combine(targetRepoParent.Path, contentInfo.Name);
             isNewContent = false;
@@ -265,27 +265,15 @@ namespace SnLiveExportImport
                 {
                     content = Content.CreateNew(targetRepoParent.Path, contentInfo.ContentTypeName, contentInfo.Name);
                     isNewContent = true;
-                } 
+                }
                 else
                 {
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
-                        //UploadData ud = new UploadData()
-                        //{
-                        //    UseChunk = true,
-                        //    FileName = contentInfo.Name,
-                        //    FileLength = fs.Length,
-                        //    ContentType = contentInfo.ContentTypeName
-
-                        //};
-                        //content = RESTCaller.UploadAsync(fs, ud, targetRepoParent.Id).GetAwaiter().GetResult();
-
                         content = Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
-
-
-
+                        isNewContent = true;
                     }
-                }                
+                }
             }
 
             return content;

@@ -188,30 +188,43 @@ namespace SnLiveExportImport.ContentImporter
             bool result = false;
             if (_xmlDoc != null)
             {
+                var cType = _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText;
                 _transferringContext = new ImportContext(
-                    _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, currentDirectory, isNewContent, needToValidate, updateReferences);
+                    _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), cType, currentDirectory, isNewContent, needToValidate, updateReferences);
 
                 result = ContentMetaData.SetFields(content, _transferringContext);
-            }
-            
-            content.SaveAsync().GetAwaiter().GetResult();
-            _contentId = content.Id;
+
+                // only should save if newcontent OR field have changed
+                if ((isNewContent && cType != "File" && cType != "Image") || result)
+                {
+                    content.SaveAsync().GetAwaiter().GetResult();
+                    _contentId = content.Id;
+
+                    if (content.Id == 0)
+                    {
+                        Log.Error($"Something went wrong! {content?.Name}");
+                    }
+                }
+            }          
 
             return result;
         }
 
         public bool UpdateReferences(Content content, bool needToValidate)
         {
+            // update reference fields only
             if (_transferringContext == null)
                 _transferringContext = new ImportContext(_xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText, null, false, needToValidate, true);
             else
                 _transferringContext.UpdateReferences = true;
-
             if (!ContentMetaData.SetFields(content, _transferringContext))
                 return false;
+
+            // exit if no permission settings available
             if (!HasPermissions && !HasBreakPermissions)
                 return true;
-            
+
+            // set permissions
             var permissionsNode = _xmlDoc.SelectSingleNode("/ContentMetaData/Permissions");
             // here should import Permissions(permissionsNode, this._metaDataPath);
             ImportPermissions(content, permissionsNode /*, this._metaDataPath*/);
@@ -221,6 +234,7 @@ namespace SnLiveExportImport.ContentImporter
 
         private bool ImportPermissions(Content content, XmlNode permissionsNode /*, string metaDataPath*/)
         {
+            bool result = false;
             string metadataPath = "";
             // parsing and executing 'Break' and 'Clear'
             var breakNode = permissionsNode.SelectSingleNode("Break");
@@ -242,74 +256,79 @@ namespace SnLiveExportImport.ContentImporter
             var identityElementIndex = 0;
             List<SetPermissionRequest> sprList = new List<SetPermissionRequest>();
 
-            foreach (XmlElement identityElement in permissionsNode.SelectNodes("Identity"))
+            var identities = permissionsNode.SelectNodes("Identity");
+            if (identities.Count > 0)
             {
-                identityElementIndex++;
-
-                // checking identity path
-                var path = identityElement.GetAttribute("path");
-                var propagationAttr = identityElement.GetAttribute("propagation");
-                var localOnly = propagationAttr == null ? false : propagationAttr.ToLowerInvariant() == "localonly";
-                if (String.IsNullOrEmpty(path))
+                foreach (XmlElement identityElement in identities)
                 {
-                    Log.Error($"Missing or empty path attribute of the Identity element {identityElementIndex} so skipped. {metadataPath}");
-                    //Thread.Sleep(1000);
-                    continue;
-                }
-                //var pathCheck = Content.ExistsAsync(path).GetAwaiter().GetResult();
-                //if (pathCheck != RepositoryPath.PathResult.Correct)
-                //    throw ImportPermissionExceptionHelper(String.Concat("Invalid path of the Identity element ", identityElementIndex, ": ", path, " (", pathCheck, ")."), metadataPath, null);
+                    identityElementIndex++;
 
-                // getting identity node
-                var identityNode = Content.LoadAsync(path).GetAwaiter().GetResult();
-                if (identityNode == null)
-                {
-                    //throw new Exception($"Identity {path} was not found: {path}. {metadataPath}");
-                    Log.Error($"Identity {identityElementIndex} was not found and so skipped: {path}. {metadataPath}");
-                    //Thread.Sleep(1000);
-                    continue;
-                }
-
-                var spr = new SetPermissionRequest();
-                spr.Identity = identityNode.Path;
-                spr.LocalOnly = localOnly;
-
-                // parsing value array
-                foreach (XmlElement permissionElement in identityElement.SelectNodes("*"))
-                {
-                    var permName = permissionElement.LocalName;
-                    
-                    switch (permissionElement.InnerText.ToLower())
+                    // checking identity path
+                    var path = identityElement.GetAttribute("path");
+                    var propagationAttr = identityElement.GetAttribute("propagation");
+                    var localOnly = propagationAttr == null ? false : propagationAttr.ToLowerInvariant() == "localonly";
+                    if (String.IsNullOrEmpty(path))
                     {
-                        case "allow":
-                        case "allowed":
-                            foreach (FieldInfo fieldInfo in spr.GetType().GetFields())
-                            {
-                                if (permName == fieldInfo.Name)
-                                {
-                                    fieldInfo.SetValue(spr, PermissionValue.Allow);
-                                }
-                            }
-                            break;
-                        case "deny":
-                        case "denied":
-                            foreach (FieldInfo fieldInfo in spr.GetType().GetFields())
-                            {
-                                if (permName == fieldInfo.Name)
-                                {
-                                    fieldInfo.SetValue(spr, PermissionValue.Deny);
-                                }
-                            }
-                            break;
-                        default:
-                            throw new Exception($"Invalid permission value in Identity {identityElementIndex}: {permissionElement.InnerText}. Allowed values: Allowed, Denied, {metadataPath}");
+                        Log.Error($"Missing or empty path attribute of the Identity element {identityElementIndex} so skipped. {metadataPath}");
+                        //Thread.Sleep(1000);
+                        continue;
                     }
-                }
-                sprList.Add(spr);
-            }
-            SecurityManager.SetPermissionsAsync(content.Id, sprList.ToArray());
+                    //var pathCheck = Content.ExistsAsync(path).GetAwaiter().GetResult();
+                    //if (pathCheck != RepositoryPath.PathResult.Correct)
+                    //    throw ImportPermissionExceptionHelper(String.Concat("Invalid path of the Identity element ", identityElementIndex, ": ", path, " (", pathCheck, ")."), metadataPath, null);
 
-            return true;
+                    // getting identity node
+                    var identityNode = Content.LoadAsync(path).GetAwaiter().GetResult();
+                    if (identityNode == null)
+                    {
+                        //throw new Exception($"Identity {path} was not found: {path}. {metadataPath}");
+                        Log.Error($"Identity {identityElementIndex} was not found and so skipped: {path}. {metadataPath}");
+                        //Thread.Sleep(1000);
+                        continue;
+                    }
+
+                    var spr = new SetPermissionRequest();
+                    spr.Identity = identityNode.Path;
+                    spr.LocalOnly = localOnly;
+
+                    // parsing value array
+                    foreach (XmlElement permissionElement in identityElement.SelectNodes("*"))
+                    {
+                        var permName = permissionElement.LocalName;
+
+                        switch (permissionElement.InnerText.ToLower())
+                        {
+                            case "allow":
+                            case "allowed":
+                                foreach (FieldInfo fieldInfo in spr.GetType().GetFields())
+                                {
+                                    if (permName == fieldInfo.Name)
+                                    {
+                                        fieldInfo.SetValue(spr, PermissionValue.Allow);
+                                    }
+                                }
+                                break;
+                            case "deny":
+                            case "denied":
+                                foreach (FieldInfo fieldInfo in spr.GetType().GetFields())
+                                {
+                                    if (permName == fieldInfo.Name)
+                                    {
+                                        fieldInfo.SetValue(spr, PermissionValue.Deny);
+                                    }
+                                }
+                                break;
+                            default:
+                                throw new Exception($"Invalid permission value in Identity {identityElementIndex}: {permissionElement.InnerText}. Allowed values: Allowed, Denied, {metadataPath}");
+                        }
+                    }
+                    sprList.Add(spr);
+                }
+                SecurityManager.SetPermissionsAsync(content.Id, sprList.ToArray());
+                result = true;
+            }
+
+            return result;
         }
 
         private static string GetContentTypeName(string fileName)

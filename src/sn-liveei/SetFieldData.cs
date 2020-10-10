@@ -17,6 +17,7 @@ namespace SnLiveExportImport
     {
         public static bool SetFields(Content content, ImportContext context)
         {
+            bool isModified = false;
             // import fields
             foreach (XmlNode fieldNode in context.FieldData)
             {
@@ -52,8 +53,12 @@ namespace SnLiveExportImport
                         {
                             if (content.Id == 0)
                             {
+                                // what if referenced content does not exists, later can not be set?
                                 if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
+                                {
                                     content[fieldName] = fieldNode.InnerText;
+                                    isModified = true;
+                                }
                             }
                             else
                             {
@@ -64,7 +69,10 @@ namespace SnLiveExportImport
                         {
                             // set other references postponed for ay second round
                             if (pathNodeList.Count > 0 || fieldNode.InnerText.Trim().Length > 0)
+                            {
                                 context.PostponedReferenceFields.Add(fieldName);
+                                isModified = true;
+                            }
                         }
                     }
                     else
@@ -74,11 +82,13 @@ namespace SnLiveExportImport
                         if (!notAllowedToModify.Any(x => x == context.ContentType))
                         {
                             content[fieldName] = fieldNode.InnerText.Split(", ");
+                            isModified = true;
                         }
                     }
                     else if (arrayTypes.Any(x => x == fieldName))
                     {
                         content[fieldName] = fieldNode.InnerText.Split(new char[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                        isModified = true;
                     }
                     else
                     // attachment means binary in given file, so we will upload it
@@ -93,16 +103,7 @@ namespace SnLiveExportImport
                                 using (FileStream fs = File.OpenRead(filePath))
                                 {
                                     content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
-
-                                    //UploadData ud = new UploadData()
-                                    //{
-                                    //    UseChunk = true,
-                                    //    FileName = content.Name,
-                                    //    FileLength = fs.Length,
-                                    //    ContentType = context.ContentType
-
-                                    //};
-                                    //content = RESTCaller.UploadAsync(fs, ud, content.ParentId).GetAwaiter().GetResult();
+                                    Log.Information($"Upload at SetFieldData: {content.Name}");
                                 }
                             }
                             catch (Exception ex)
@@ -116,8 +117,10 @@ namespace SnLiveExportImport
                     {
                         // Simple types (Name, DisplayName, Body, Int, Date, single Reference) all works with innertext
                         if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
+                        {
                             content[fieldName] = fieldNode.InnerText;
-
+                            isModified = true;
+                        }
                         //content[fieldName] = fieldNode.InnerText;
 
 
@@ -137,7 +140,10 @@ namespace SnLiveExportImport
                     else if (pathNodeList.Count == 1)
                     {
                         if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
+                        {
                             content[fieldName] = fieldNode.InnerText;
+                            isModified = true;
+                        }
                     } 
                     else if (pathNodeList.Count > 1)
                     {
@@ -148,11 +154,11 @@ namespace SnLiveExportImport
                             paths.Add(pathNode.InnerText.Trim());
                         }
                         content[fieldName] = $"[{string.Join(",",paths)}]";
+                        isModified = true;
                     } 
                 }
             }
-            // TODO: check if something modified and only save when true 
-            return true;
+            return isModified;
         }
     }
 }
