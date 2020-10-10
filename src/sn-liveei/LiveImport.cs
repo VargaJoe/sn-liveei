@@ -51,7 +51,7 @@ namespace SnLiveExportImport
             }
 
             //SenseNet.Client.Importer.ImportAsync(fsPath, targetRepoPath).GetAwaiter().GetResult();
-            
+
             ImportContents(fsPath, targetRepoPath, validate);
         }
 
@@ -276,13 +276,14 @@ namespace SnLiveExportImport
                         //    FileName = contentInfo.Name,
                         //    FileLength = fs.Length,
                         //    ContentType = contentInfo.ContentTypeName
-                            
+
                         //};
+                        //content = RESTCaller.UploadAsync(fs, ud, targetRepoParent.Id).GetAwaiter().GetResult();
 
                         content = Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
-                        //content = RESTCaller.UploadAsync(fs, ud, targetRepoParent.Id).GetAwaiter().GetResult();
-                        
-                        
+
+
+
                     }
                 }                
             }

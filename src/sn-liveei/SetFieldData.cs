@@ -8,6 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
+using System.Web;
 using System.Xml;
 
 namespace SnLiveExportImport
@@ -31,7 +32,7 @@ namespace SnLiveExportImport
 
                 // TODO: special types wont work for now
                 string[] skipTemporarily = { "GroupAttachments", "NotificationMode", "InheritableApprovingMode", 
-                    "InheritableVersioningMode", "ApprovingMode", "VersioningMode", "Status", "Priority", "MemoType", 
+                    "InheritableVersioningMode", "ApprovingMode", "VersioningMode", 
                     "SeeAlso", "TrashDisabled", "RateAvg", "NotificationMode", "Description" };
                 if (skipTemporarily.Any(x => x == fieldName))
                     continue;
@@ -40,6 +41,7 @@ namespace SnLiveExportImport
                 var pathNodeList = fieldNode.SelectNodes("*");
                 
                 string[] setFirstTime = { "CreatedBy", "ModifiedBy" };
+                string[] arrayTypes = { "MemoType", "EventType", "Priority", "Status" };
                 if (!context.UpdateReferences)
                 {
                     // reference field (I hope)
@@ -74,6 +76,10 @@ namespace SnLiveExportImport
                             content[fieldName] = fieldNode.InnerText.Split(", ");
                         }
                     }
+                    else if (arrayTypes.Any(x => x == fieldName))
+                    {
+                        content[fieldName] = fieldNode.InnerText.Split(new char[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    }
                     else
                     // attachment means binary in given file, so we will upload it
                     if (!string.IsNullOrWhiteSpace(attachment))
@@ -87,6 +93,16 @@ namespace SnLiveExportImport
                                 using (FileStream fs = File.OpenRead(filePath))
                                 {
                                     content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+
+                                    //UploadData ud = new UploadData()
+                                    //{
+                                    //    UseChunk = true,
+                                    //    FileName = content.Name,
+                                    //    FileLength = fs.Length,
+                                    //    ContentType = context.ContentType
+
+                                    //};
+                                    //content = RESTCaller.UploadAsync(fs, ud, content.ParentId).GetAwaiter().GetResult();
                                 }
                             }
                             catch (Exception ex)
@@ -101,6 +117,9 @@ namespace SnLiveExportImport
                         // Simple types (Name, DisplayName, Body, Int, Date, single Reference) all works with innertext
                         if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
                             content[fieldName] = fieldNode.InnerText;
+
+                        //content[fieldName] = fieldNode.InnerText;
+
 
                         // TODO: BUT reference field not should be updated at first round, only after when all the content is present in repository
                     }

@@ -253,7 +253,7 @@ namespace SnLiveExportImport.ContentImporter
                 if (String.IsNullOrEmpty(path))
                 {
                     Log.Error($"Missing or empty path attribute of the Identity element {identityElementIndex} so skipped. {metadataPath}");
-                    Thread.Sleep(1000);
+                    //Thread.Sleep(1000);
                     continue;
                 }
                 //var pathCheck = Content.ExistsAsync(path).GetAwaiter().GetResult();
@@ -266,7 +266,7 @@ namespace SnLiveExportImport.ContentImporter
                 {
                     //throw new Exception($"Identity {path} was not found: {path}. {metadataPath}");
                     Log.Error($"Identity {identityElementIndex} was not found and so skipped: {path}. {metadataPath}");
-                    Thread.Sleep(1000);
+                    //Thread.Sleep(1000);
                     continue;
                 }
 
