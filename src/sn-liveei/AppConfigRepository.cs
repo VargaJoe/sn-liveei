@@ -52,6 +52,7 @@ namespace SnLiveExportImport
 
             server.Authentication.AccessToken = await GetTokenAsync(_config);
 
+            ClientContext.Current.ChunkSizeInBytes = 512000;
             ClientContext.Current.AddServer(server);
         }
 
