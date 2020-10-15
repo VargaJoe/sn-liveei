@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json.Linq;
+﻿using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
+using Newtonsoft.Json.Linq;
 using SenseNet.Client;
 using Serilog;
 using System;
@@ -15,12 +16,13 @@ namespace SnLiveExportImport
     public static class LiveExport
     {
         public static List<Content> ContentTypes { get; set; }
-        public static string[] excludeFields = { "ParentId", "Id", "Name", "Version", "VersionId", "Path", "Depth", "Type", "TypeIs", "InTree", "InFolder", "IsSystemContent", "HandlerName", "ParentTypeName" };
+        public static string[] excludeFields = { "ParentId", "Id", "Name", "Version", "VersionId", "Path", "Depth", "Type", "TypeIs", "InTree", "InFolder", "IsSystemContent", "HandlerName", "ParentTypeName", "CreatedById", "ModifiedById", "AllFieldSettingContents" };
 
         public static void StartExport()
         {
             // TODO: get variables from parameters and/or settings
-            string sourceRepoPath = "/Root/Content";
+            //string sourceRepoPath = "/Root/Content";
+            string sourceRepoPath = "/Root/Content/JoeTest/Marketing/Groups/Visitors";            
             string targetBasePath = "./export";
             //string fsTargetRepoPath = $".{sourceRepoPath.Replace("/Root", "")}";
 
@@ -170,6 +172,8 @@ namespace SnLiveExportImport
                     writer.WriteElementString("Aspects", String.Join(", ", aspects));
             }
 
+
+
             // exporting other fields
             //if (this.ContentHandler is ContentType)
             //    return;
@@ -181,8 +185,8 @@ namespace SnLiveExportImport
 
             //var fields = content["Fields"];
             foreach (var field in fields)
-            {
-                var value = content[field];
+            {                
+                var value = content[field] as JObject;
                 //if (field.Name != "Name" && field.Name != "Versions")
                 if (!excludeFields.Any(f => f == field)                    
                     //&& value != null && !string.IsNullOrWhiteSpace(value?.ToString())
@@ -205,7 +209,47 @@ namespace SnLiveExportImport
                     //    writer.WriteAttributeString(FIELDSUBTYPEATTRIBUTENAME, subType.ToString());
 
                     //ExportData(writer, context);
-                    writer.WriteString(content[field]?.ToString());
+                    //var d = ((JObject)content[field])["__deferred"]["uri"];
+                    if (value != null && value["__deferred"] != null)
+                    {
+                        // reference value
+                        var deferredUri = value["__deferred"]["uri"]?.ToString();
+                        var baseUrl = content.Server.Url;
+
+                        object refResponse = null;
+                        RESTCaller.ProcessWebResponseAsync($"{baseUrl}{deferredUri}", System.Net.Http.HttpMethod.Get, content.Server, async response =>
+                        {
+                            if (response == null)
+                                return;
+                            using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                            using (var reader = new StreamReader(stream))
+                            {
+                                var textResponse = reader.ReadToEnd();
+                                refResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(textResponse);
+                            }
+                        }, CancellationToken.None).GetAwaiter().GetResult();
+
+                        if (refResponse is JObject)
+                        {
+                            writer.WriteStartElement("Path");
+                            writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
+                            writer.WriteEndElement();
+                        }
+                        else if (refResponse is JArray)
+                        {
+                            foreach (var refField in refResponse as JArray)
+                            {
+                                writer.WriteStartElement("Path");
+                                writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                writer.WriteEndElement();
+                            }
+                        }
+
+                    }
+                    else
+                    {
+                        writer.WriteString(content[field]?.ToString());
+                    }
 
                     writer.WriteEndElement();
                 }
@@ -228,7 +272,7 @@ namespace SnLiveExportImport
 
             List<string> result = new List<string>();
 
-            var a = new ODataRequest() { Path = "/Root", ActionName = "GetSchema", Select = new string[] { "Type", "Name" }, AutoFilters = FilterStatus.Disabled, LifespanFilter = FilterStatus.Disabled, Metadata = MetadataFormat.None };
+            var a = new ODataRequest() { Path = "/Root", ActionName = "GetSchema", AutoFilters = FilterStatus.Disabled, LifespanFilter = FilterStatus.Disabled, Metadata = MetadataFormat.None };
             var c = RESTCaller.GetResponseStringAsync(a).GetAwaiter().GetResult();
             //var d = JsonHelper.Deserialize(c.Substring(1, c.Length - 2).Replace("\n", "").Trim());
             var d = Newtonsoft.Json.JsonConvert.DeserializeObject(c) as JArray;
