@@ -16,7 +16,16 @@ namespace SnLiveExportImport
     public static class LiveExport
     {
         public static List<Content> ContentTypes { get; set; }
-        public static string[] excludeFields = { "ParentId", "Id", "Name", "Version", "VersionId", "Path", "Depth", "Type", "TypeIs", "InTree", "InFolder", "IsSystemContent", "HandlerName", "ParentTypeName", "CreatedById", "ModifiedById", "AllFieldSettingContents" };
+        public static string[] excludeFields = { "ParentId", "Id", "Name", "Version", "VersionId", 
+            "Path", "Depth", "Type", "TypeIs", "InTree", "InFolder", "IsSystemContent", "HandlerName", 
+            "ParentTypeName", "CreatedById", "ModifiedById", "AllFieldSettingContents", "OwnerId", 
+            "EffectiveAllowedChildTypes", "VersioningMode", "AllRoles", "DirectRoles", "CheckedOutTo", 
+            "InheritableVersioningMode", "VersionCreatedBy", "VersionCreationDate", "VersionModifiedBy", 
+            "VersionModificationDate", "ApprovingMode", "InheritableApprovingMode", "SavingState", 
+            "ExtensionData", "BrowseApplication", "Versions", "CheckInComments", "RejectReason", 
+            "Workspace", "BrowseUrl", "Sharing", "SharedWith", "SharedBy", "SharingMode", "SharingLevel", 
+            "Actions", "IsFile", "Children", "Publishable", "Locked", "Rate", "RateStr", "Tags", "Approvable",
+            "AllowedChildTypes", "IsFolder", "Icon" };
 
         public static void StartExport()
         {
@@ -50,9 +59,15 @@ namespace SnLiveExportImport
 
                 Log.Information($"Target directory exists: {fsPath}. Exported contents will override existing subelements.");
 
+                var server = ClientContext.Current.Server;
+                var lastSlashPos = repositoryPath.LastIndexOf("/");
+                var parentPath = repositoryPath.Substring(0, lastSlashPos);
+                var contentName = repositoryPath.Substring(lastSlashPos + 1);
 
                 //-- load export root
-                var root = Content.LoadAsync(repositoryPath).GetAwaiter().GetResult();
+                //var root = Content.LoadAsync(repositoryPath).GetAwaiter().GetResult();
+                JObject root = LoadAsyncJObject($"{server.Url}/odata.svc{parentPath}/('{contentName}')?metadata=no", ClientContext.Current.Server);
+
 
                 if (root != null)
                 {
@@ -162,6 +177,61 @@ namespace SnLiveExportImport
             }
         }
 
+        private static void ExportContent(JObject content, ExportContext context, string fsPath, string indent)
+        {
+
+            //if (content.ContentHandler is ContentType)
+            //{
+            //    //Log
+            //    Log.Information(content.Path, content.Name);
+            //    //Log
+
+            //    ExportContentType(content, context, indent);
+            //    return;
+            //}
+
+            context.CurrentDirectory = fsPath;
+            var contentPath = content["d"]?["Path"]?.ToString();
+            var contentName = content["d"]?["Name"]?.ToString();
+            //Log
+            Log.Information(contentPath, contentName);
+            //Log
+
+            string metaFilePath = Path.Combine(fsPath, contentName + ".Content");
+            XmlWriterSettings settings = new XmlWriterSettings();
+            settings.Encoding = Encoding.UTF8;
+            settings.Indent = true;
+            settings.IndentChars = "  ";
+
+            using (XmlWriter writer = XmlWriter.Create(metaFilePath, settings))
+            {
+                //<?xml version="1.0" encoding="utf-8"?>
+                //<ContentMetaData>
+                //    <ContentType>Site</ContentType>
+                //    <Fields>
+                //        ...
+                writer.WriteStartDocument();
+                writer.WriteStartElement("ContentMetaData");
+                writer.WriteElementString("ContentType", content["Type"]?.ToString());
+                writer.WriteElementString("ContentName", contentName);
+                writer.WriteStartElement("Fields");
+                try
+                {
+                    ExportFieldData(content, writer, context);
+                }
+                catch (Exception e)
+                {
+
+                }
+                writer.WriteEndElement();
+                writer.WriteStartElement("Permissions");
+                writer.WriteElementString("Clear", null);
+                //content.ContentHandler.Security.ExportPermissions(writer);
+                writer.WriteEndElement();
+                writer.WriteEndElement();
+            }
+        }
+
         public static void ExportFieldData(Content content, XmlWriter writer, ExportContext context)
         {
             // first of all: exporting aspect names
@@ -173,6 +243,12 @@ namespace SnLiveExportImport
             }
 
 
+
+            //foreach (JProperty f in test["d"])
+            //{
+            //    var fieldName = f.Name;
+            //    var fieldValue = f.Value;
+            //}
 
             // exporting other fields
             //if (this.ContentHandler is ContentType)
@@ -256,6 +332,101 @@ namespace SnLiveExportImport
             }
         }
 
+        public static void ExportFieldData(JObject content, XmlWriter writer, ExportContext context)
+        {
+            // first of all: exporting aspect names
+            if (content != null)
+            {
+                JArray aspects = content["Aspects"] as JArray;
+                if (aspects != null && aspects.Count > 0)
+                    writer.WriteElementString("Aspects", String.Join(", ", aspects.Select(j => j.ToString())));
+            }
+
+            // exporting other fields
+            //if (this.ContentHandler is ContentType)
+            //    return;
+            // exit if content type is "ContentType" 
+
+            foreach (JProperty field in content["d"])
+            {
+                var fieldName = field.Name;
+                var fieldValue = field.Value;
+
+                if (!excludeFields.Any(f => f == fieldName))
+                {
+                    //if (ReadOnly)
+                    //    return;
+                    //if (GetData() == null)
+                    //    return;
+
+                    //if (!HasExportData)
+                    //    return;
+
+                    //FieldSubType subType;
+                    //var exportName = GetExportName(this.Name, out subType);
+
+                    //writer.WriteStartElement(exportName);
+                    writer.WriteStartElement(fieldName);
+                    //if (subType != FieldSubType.General)
+                    //    writer.WriteAttributeString(FIELDSUBTYPEATTRIBUTENAME, subType.ToString());
+
+                    //ExportData(writer, context);
+                    //var d = ((JObject)content[field])["__deferred"]["uri"];
+                    if (fieldValue != null && fieldValue.GetType().Name == "JObject" && fieldValue["__deferred"] != null)
+                    {
+                        // reference value
+                        var deferredUri = fieldValue["__deferred"]["uri"]?.ToString();
+                        var server = ClientContext.Current.Server;
+                        var baseUrl = server.Url;
+
+                        object refResponse = null;
+                        RESTCaller.ProcessWebResponseAsync($"{baseUrl}{deferredUri}", System.Net.Http.HttpMethod.Get, server, async response =>
+                        {
+                            if (response == null)
+                                return;
+                            using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                            using (var reader = new StreamReader(stream))
+                            {
+                                var textResponse = reader.ReadToEnd();
+                                refResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(textResponse);
+                            }
+                        }, CancellationToken.None).GetAwaiter().GetResult();
+
+                        if (refResponse == null)
+                            continue;
+
+                        // Date should be formatted: yyyy-MM-ddTHH:mm:ss.zz
+
+                        if (((JObject)refResponse)["d"]["__count"] != null)
+                        {
+                            // multiple references
+                            var  refResults = ((JObject)refResponse)["d"]["results"] as JArray;
+                            foreach (var refField in refResults)
+                            {
+                                writer.WriteStartElement("Path");
+                                writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                writer.WriteEndElement();
+                            }
+                        } else
+                        {
+                            // only single reference
+                            writer.WriteStartElement("Path");
+                            writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
+                            writer.WriteEndElement();
+                        }
+                    }
+                    else
+                    {
+                        writer.WriteString(fieldValue?.ToString());
+                    }
+
+                    writer.WriteEndElement();
+                }
+            }
+
+   
+        }
+
         public static List<string> GetCtd(Content content)
         {
             //var ctdContent = ContentTypes.FirstOrDefault(c => c.Name == content["Type"].ToString());
@@ -284,6 +455,25 @@ namespace SnLiveExportImport
             {
                 result.Add(setting["Name"].ToString());
             }
+
+            return result;
+        }
+
+        public static JObject LoadAsyncJObject(string actionUrl, ServerContext server)
+        {
+            JObject result = null;
+            
+            RESTCaller.ProcessWebResponseAsync(actionUrl, System.Net.Http.HttpMethod.Get, server, async response =>
+            {
+                if (response == null)
+                    return;
+                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                using (var reader = new StreamReader(stream))
+                {
+                    var textResponse = reader.ReadToEnd();
+                    result = Newtonsoft.Json.JsonConvert.DeserializeObject(textResponse) as JObject;
+                }
+            }, CancellationToken.None).GetAwaiter().GetResult();
 
             return result;
         }
