@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
+using Microsoft.Win32;
 using Newtonsoft.Json.Linq;
 using SenseNet.Client;
 using Serilog;
@@ -6,6 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Xml;
@@ -530,33 +532,55 @@ namespace SnLiveExportImport
                             writer.WriteEndElement();
                             break;
                         case "Binary":
-                            // TODO: implement
-                            var fileName = contentName;
-                            if (fieldName != "Binary")
-                            {
-                                var ext = ".jpg";
-                                fileName += "." + fieldName + ext;
-                            }
+                            var binUrl = fieldValue["__mediaresource"]?["media_src"]?.ToString();
+                            if (string.IsNullOrWhiteSpace(binUrl))
+                                continue;
 
-                            writer.WriteStartElement(fieldName);
-                            writer.WriteAttributeString("attachment", fileName);
-                            RESTCaller.GetStreamResponseAsync(contentId, async response =>
-                            {
-                                if (response == null)
-                                    return;
-                                var fsDirectory = context.CurrentDirectory;
-                                var fsPath = Path.Combine(fsDirectory, fileName);
-
-                                using (var targetFile = new FileStream(fsPath, FileMode.Create))
+                            RESTCaller.ProcessWebResponseAsync($"{baseUrl}{binUrl}", System.Net.Http.HttpMethod.Get, server, async response =>
                                 {
+                                    if (response == null)
+                                        return;
+
+                                    var fsDirectory = context.CurrentDirectory;
+                                    var fileName = contentName;
+                                    byte[] fileBytes;
+
                                     using (var sourceStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
                                     {
-                                        for (var i = 0; i < sourceStream.Length; i++)
-                                            targetFile.WriteByte((byte)sourceStream.ReadByte());
+                                        using (var helperStream = new MemoryStream())
+                                        {
+                                            sourceStream.CopyTo(helperStream);
+                                            fileBytes = helperStream.ToArray();
+                                        }
                                     }
-                                }
-                            }, CancellationToken.None).GetAwaiter().GetResult();
-                            writer.WriteEndElement();
+
+                                    // extension workaround
+                                    if (fieldName != "Binary")
+                                    {
+                                        var mime = fieldValue["__mediaresource"]?["content_type"]?.ToString();
+                                        var ext = GetDefaultExtension(mime);
+
+                                        var magic = GetMime(fileBytes.Take(256).ToArray());
+                                        ext = GetDefaultExtension(magic);
+
+                                        if (string.IsNullOrWhiteSpace(ext) && fieldName == "ImageData")
+                                            ext = "jpg";
+
+                                        fileName += "." + fieldName + ext;
+                                    }
+                                    var fsPath = Path.Combine(fsDirectory, fileName);
+
+                                    writer.WriteStartElement(fieldName);
+                                    writer.WriteAttributeString("attachment", fileName);
+
+                                    using (var targetFile = new FileStream(fsPath, FileMode.Create))
+                                    {
+                                        for (var i = 0; i < fileBytes.Length; i++)
+                                            targetFile.WriteByte((byte)fileBytes[i]);
+                                    }
+
+                                    writer.WriteEndElement();
+                                }, CancellationToken.None).GetAwaiter().GetResult();
                             break;
                         case "Null":
                             // not exported
@@ -567,6 +591,49 @@ namespace SnLiveExportImport
                     }
                 }
             }
+        }
+
+        public static string GetDefaultExtension(string mimeType)
+        {
+            string result;
+            RegistryKey key;
+            object value;
+
+            key = Registry.ClassesRoot.OpenSubKey(@"MIME\Database\Content Type\" + mimeType, false);
+            value = key != null ? key.GetValue("Extension", null) : null;
+            result = value != null ? value.ToString() : string.Empty;
+
+            return result;
+        }
+        [DllImport("urlmon.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = false)]
+        static extern int FindMimeFromData(
+            IntPtr pBC,
+            [MarshalAs(UnmanagedType.LPWStr)] string pwzUrl,
+            [MarshalAs(UnmanagedType.LPArray, ArraySubType=UnmanagedType.I1, SizeParamIndex=3)]
+                        byte[] pBuffer,
+            int cbSize,
+            [MarshalAs(UnmanagedType.LPWStr)] string pwzMimeProposed,
+                int dwMimeFlags,
+            out IntPtr ppwzMimeOut,
+            int dwReserved);
+
+        public static string GetMime(byte[] header)
+        {
+            string result = string.Empty;
+            try
+            {
+                IntPtr mimetype;
+                if (FindMimeFromData(IntPtr.Zero,null,header,(int)header.Length,null,0x20,out mimetype,0) == 0)
+                {
+                    result = Marshal.PtrToStringUni(mimetype);
+                    Marshal.FreeCoTaskMem(mimetype);
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error($"{e.Message}");
+            }
+            return result;
         }
 
         public static List<string> GetCtd(Content content)
