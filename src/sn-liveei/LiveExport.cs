@@ -41,7 +41,7 @@ namespace SnLiveExportImport
 
             // TODO: get variables from parameters and/or settings
             //string sourceRepoPath = "/Root/Content";
-            string sourceRepoPath = "/Root/Content/SampleWorkspace2";
+            string sourceRepoPath = "/Root";
             string targetBasePath = "./export";
             //string fsTargetRepoPath = $".{sourceRepoPath.Replace("/Root", "")}";
 
@@ -235,23 +235,21 @@ namespace SnLiveExportImport
 
         private static void ExportContent(JObject content, ExportContext context, string fsPath, string indent)
         {
-
-            //if (content.ContentHandler is ContentType)
-            //{
-            //    //Log
-            //    Log.Information(content.Path, content.Name);
-            //    //Log
-
-            //    ExportContentType(content, context, indent);
-            //    return;
-            //}
-
             context.CurrentDirectory = fsPath;
             var contentPath = content?["Path"]?.ToString();
             var contentName = content?["Name"]?.ToString();
-            //Log
-            Log.Information(contentPath, contentName);
-            //Log
+            var contentType = content["Type"]?.ToString();
+
+            if (contentType == "ContentType")
+            {
+                Log.Information($"{contentPath} (TODO)");
+
+                // TODO:
+                //ExportContentType(content, context, indent);
+                return;
+            }
+
+            Log.Information(contentPath);
 
             string metaFilePath = Path.Combine(fsPath, contentName + ".Content");
             XmlWriterSettings settings = new XmlWriterSettings();
