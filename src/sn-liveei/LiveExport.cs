@@ -15,7 +15,7 @@ namespace SnLiveExportImport
 {
     public static class LiveExport
     {
-        public static List<Content> ContentTypes { get; set; }
+        public static List<JObject> ContentTypes { get; set; }
         public static string[] excludeFields = { "ParentId", "Id", "Name", "Version", "VersionId", 
             "Path", "Depth", "Type", "TypeIs", "InTree", "InFolder", "IsSystemContent", "HandlerName", 
             "ParentTypeName", "CreatedById", "ModifiedById", "AllFieldSettingContents", "OwnerId", 
@@ -29,9 +29,12 @@ namespace SnLiveExportImport
 
         public static void StartExport()
         {
+            // prepare ctd info
+            ContentTypes = GetCtds();
+
             // TODO: get variables from parameters and/or settings
             //string sourceRepoPath = "/Root/Content";
-            string sourceRepoPath = "/Root/Content/JoeTest/Marketing/Groups/Visitors";            
+            string sourceRepoPath = "/Root/Content";
             string targetBasePath = "./export";
             //string fsTargetRepoPath = $".{sourceRepoPath.Replace("/Root", "")}";
 
@@ -43,8 +46,8 @@ namespace SnLiveExportImport
             string cbPath = (sync) ? targetBasePath : $"{targetBasePath}{DateTime.Now.Ticks}";
             string fsPath = Path.GetFullPath(cbPath);
 
-            var query = $"+Type:ContentType";
-            ContentTypes = Content.QueryAsync(query, new string[0], new string[0], new QuerySettings() { EnableAutofilters = FilterStatus.Disabled }).GetAwaiter().GetResult().ToList();
+            //var query = $"+Type:ContentType";
+            //ContentTypes = Content.QueryAsync(query, new string[0], new string[0], new QuerySettings() { EnableAutofilters = FilterStatus.Disabled }).GetAwaiter().GetResult().ToList();
 
             ExportContents(sourceRepoPath, fsPath, all);
         }
@@ -68,7 +71,6 @@ namespace SnLiveExportImport
                 //var root = Content.LoadAsync(repositoryPath).GetAwaiter().GetResult();
                 JObject root = LoadAsyncJObject($"{server.Url}/odata.svc{parentPath}/('{contentName}')?metadata=no", ClientContext.Current.Server);
 
-
                 if (root != null)
                 {
                     Log.Information($"=========================== Export ===========================");
@@ -86,10 +88,10 @@ namespace SnLiveExportImport
                     if (!Directory.Exists(fullDirPath))
                         Directory.CreateDirectory(fullDirPath);
 
-                    //if (all)
-                    //ExportContentTree(root, context, fullDirPath, "");
-                    //else
-                    ExportContent(root, context, fullDirPath, "");
+                    if (all)
+                        ExportContentTree(root, context, fullDirPath, "");
+                    else
+                        ExportContent(root, context, fullDirPath, "");
 
                     Log.Information($"--------------------------------------------------------------");
                     Log.Information($"Outer references:");
@@ -123,9 +125,50 @@ namespace SnLiveExportImport
             //    Log.Information($"Export is finished with ", exceptions, " errors.");
         }
 
+        private static void ExportContentTree(JObject content, ExportContext context, string fsPath, string indent)
+        {
+            ExportContent(content, context, fsPath, indent);
+
+            var contentType = content["Type"]?.ToString();
+            var contentName = content["Name"]?.ToString();
+
+            if (string.IsNullOrWhiteSpace(contentName))
+                return;
+
+            if (contentType == "SmartFolder")
+                return;
+
+            var server = ClientContext.Current.Server;
+            var contentPath = content["Path"]?.ToString();
+
+            // walk through only if it has children
+            JObject contentAsFolder = LoadContainerAsyncJObject($"{server.Url}/odata.svc{contentPath}?metadata=no", ClientContext.Current.Server);
+            if (contentAsFolder == null)
+                return;
+
+            int childCount = 0;
+
+            //var queryResult = contentAsFolder.GetChildren(new QuerySettings { EnableAutofilters = false, EnableLifespanFilter = false });
+            //var childCount = queryResult.Count;
+
+            if (!int.TryParse(contentAsFolder["__count"]?.ToString(), out childCount) || childCount == 0)
+                return;
+
+            var children = contentAsFolder["results"] as JArray;
+            var newDir = Path.Combine(fsPath, contentName);
+
+            if (contentType != "ContentType")
+                Directory.CreateDirectory(newDir);
+
+            var newIndent = indent + "  ";
+            foreach (JObject childContent in children)
+            {
+                ExportContentTree(childContent, context, newDir, newIndent);
+            }
+        }
+
         private static void ExportContent(Content content, ExportContext context, string fsPath, string indent)
         {
-
             //if (content.ContentHandler is ContentType)
             //{
             //    //Log
@@ -191,8 +234,8 @@ namespace SnLiveExportImport
             //}
 
             context.CurrentDirectory = fsPath;
-            var contentPath = content["d"]?["Path"]?.ToString();
-            var contentName = content["d"]?["Name"]?.ToString();
+            var contentPath = content?["Path"]?.ToString();
+            var contentName = content?["Name"]?.ToString();
             //Log
             Log.Information(contentPath, contentName);
             //Log
@@ -347,7 +390,7 @@ namespace SnLiveExportImport
             //    return;
             // exit if content type is "ContentType" 
 
-            foreach (JProperty field in content["d"])
+            foreach (JProperty field in content.Properties())
             {
                 var fieldName = field.Name;
                 var fieldValue = field.Value;
@@ -356,8 +399,9 @@ namespace SnLiveExportImport
                 {
                     //if (ReadOnly)
                     //    return;
-                    //if (GetData() == null)
-                    //    return;
+                    
+                    if (fieldValue.Type == JTokenType.Null)
+                        continue;
 
                     //if (!HasExportData)
                     //    return;
@@ -365,14 +409,13 @@ namespace SnLiveExportImport
                     //FieldSubType subType;
                     //var exportName = GetExportName(this.Name, out subType);
 
-                    //writer.WriteStartElement(exportName);
-                    writer.WriteStartElement(fieldName);
+                    //writer.WriteStartElement(fieldName);
                     //if (subType != FieldSubType.General)
                     //    writer.WriteAttributeString(FIELDSUBTYPEATTRIBUTENAME, subType.ToString());
 
                     //ExportData(writer, context);
                     //var d = ((JObject)content[field])["__deferred"]["uri"];
-                    if (fieldValue != null && fieldValue.GetType().Name == "JObject" && fieldValue["__deferred"] != null)
+                    if (fieldValue.GetType().Name == "JObject" && fieldValue["__deferred"] != null)
                     {
                         // reference value
                         var deferredUri = fieldValue["__deferred"]["uri"]?.ToString();
@@ -392,39 +435,47 @@ namespace SnLiveExportImport
                             }
                         }, CancellationToken.None).GetAwaiter().GetResult();
 
-                        if (refResponse == null)
-                            continue;
-
-                        // Date should be formatted: yyyy-MM-ddTHH:mm:ss.zz
-
-                        if (((JObject)refResponse)["d"]["__count"] != null)
+                        if (refResponse != null)
                         {
-                            // multiple references
-                            var  refResults = ((JObject)refResponse)["d"]["results"] as JArray;
-                            foreach (var refField in refResults)
+                            writer.WriteStartElement(fieldName);
+                            if (((JObject)refResponse)["d"]["__count"] != null)
                             {
+                                // multiple references
+                                var refResults = ((JObject)refResponse)["d"]["results"] as JArray;
+                                foreach (var refField in refResults)
+                                {
+                                    writer.WriteStartElement("Path");
+                                    writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                    writer.WriteEndElement();
+                                }
+                            }
+                            else
+                            {
+                                // only single reference
                                 writer.WriteStartElement("Path");
-                                writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
                                 writer.WriteEndElement();
                             }
-                        } else
-                        {
-                            // only single reference
-                            writer.WriteStartElement("Path");
-                            writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
                             writer.WriteEndElement();
                         }
                     }
                     else
                     {
-                        writer.WriteString(fieldValue?.ToString());
+                        writer.WriteStartElement(fieldName);
+                        string val = fieldValue?.ToString();
+                        // Date workaround should be formatted: yyyy-MM-ddTHH:mm:ss.zz
+                        DateTime workaroundDate = DateTime.MinValue;
+                        if (fieldValue.Type == JTokenType.Date && DateTime.TryParse(val, out workaroundDate))
+                        {
+                            writer.WriteString(workaroundDate.ToString("yyyy-MM-ddTHH:mm:ss"));
+                        } else
+                        {
+                            writer.WriteString(val);
+                        }
+                        writer.WriteEndElement();
                     }
-
-                    writer.WriteEndElement();
                 }
             }
-
-   
         }
 
         public static List<string> GetCtd(Content content)
@@ -459,6 +510,18 @@ namespace SnLiveExportImport
             return result;
         }
 
+        public static List<JObject> GetCtds()
+        {
+            List<string> result = new List<string>();
+
+            var schemaRequest = new ODataRequest() { Path = "/Root", ActionName = "GetSchema", AutoFilters = FilterStatus.Disabled, LifespanFilter = FilterStatus.Disabled, Metadata = MetadataFormat.None };
+            var schemaResult = RESTCaller.GetResponseStringAsync(schemaRequest).GetAwaiter().GetResult();
+            //var d = JsonHelper.Deserialize(c.Substring(1, c.Length - 2).Replace("\n", "").Trim());
+            var schemas = Newtonsoft.Json.JsonConvert.DeserializeObject(schemaResult) as JArray;
+
+            return schemas.ToObject<List<JObject>>();
+        }
+
         public static JObject LoadAsyncJObject(string actionUrl, ServerContext server)
         {
             JObject result = null;
@@ -475,7 +538,26 @@ namespace SnLiveExportImport
                 }
             }, CancellationToken.None).GetAwaiter().GetResult();
 
-            return result;
+            return result?["d"] as JObject;
+        }
+
+        public static JObject LoadContainerAsyncJObject(string actionUrl, ServerContext server)
+        {
+            JObject result = null;
+
+            RESTCaller.ProcessWebResponseAsync(actionUrl, System.Net.Http.HttpMethod.Get, server, async response =>
+            {
+                if (response == null)
+                    return;
+                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                using (var reader = new StreamReader(stream))
+                {
+                    var textResponse = reader.ReadToEnd();
+                    result = Newtonsoft.Json.JsonConvert.DeserializeObject(textResponse) as JObject;
+                }
+            }, CancellationToken.None).GetAwaiter().GetResult();
+
+            return result["d"] as JObject;
         }
     }
 }
