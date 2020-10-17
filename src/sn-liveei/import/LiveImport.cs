@@ -48,6 +48,16 @@ namespace SnLiveExportImport
                 Log.Information($"file does not exists: {fsPath}.Content");
             }
 
+            if (!string.IsNullOrWhiteSpace(targetRepoParentPath) && targetRepoPath != "/Root")
+            {
+                var isTargetExists = Content.ExistsAsync(targetRepoParentPath).GetAwaiter().GetResult();
+                if (!isTargetExists)
+                {
+                    Log.Warning($"Target container was not found: {targetRepoPath}");
+                    return;
+                }
+            }
+
             //SenseNet.Client.Importer.ImportAsync(fsPath, targetRepoPath).GetAwaiter().GetResult();
 
             ImportContents(fsPath, targetRepoPath, validate);
