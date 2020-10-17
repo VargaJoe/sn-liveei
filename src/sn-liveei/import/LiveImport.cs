@@ -48,7 +48,7 @@ namespace SnLiveExportImport
                 Log.Information($"file does not exists: {fsPath}.Content");
             }
 
-            if (!string.IsNullOrWhiteSpace(targetRepoParentPath) && targetRepoPath != "/Root")
+            if (!string.IsNullOrWhiteSpace(targetRepoPath))
             {
                 var isTargetExists = Content.ExistsAsync(targetRepoParentPath).GetAwaiter().GetResult();
                 if (!isTargetExists)
