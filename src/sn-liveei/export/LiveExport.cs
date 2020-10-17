@@ -415,7 +415,8 @@ namespace SnLiveExportImport
 
             // schemas from getschema have only local field definitions
             //}
-
+            
+            var contentTypeFromSchema = ContentTypes.FirstOrDefault(ct => ct["ContentTypeName"]?.ToString() == contentType);
 
             foreach (JProperty field in content.Properties())
             {
@@ -424,17 +425,17 @@ namespace SnLiveExportImport
 
                 if (!Program._appConfig.ExcludedExportFields.Any(f => f == fieldName))
                 {
-                    var contentField = ContentFields.FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
+                    //var contentField = ContentFields.FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
+                    var contentField = contentTypeFromSchema["FieldSettings"].FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
                     if (contentField == null)
+                        continue;
+                                        
+                    if (bool.TryParse(contentField["ReadOnly"]?.ToString(), out bool readOnly) && readOnly)
                         continue;
 
                     var fieldType = contentField["Type"]?.ToString().Replace("FieldSetting", "");
-
                     if (string.IsNullOrWhiteSpace(fieldType))
                         continue;
-
-                    //if (ReadOnly)
-                    //    return;
 
                     if (fieldValue.Type == JTokenType.Null)
                         continue;
