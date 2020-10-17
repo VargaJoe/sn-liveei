@@ -32,10 +32,7 @@ namespace SnLiveExportImport
                     continue;
 
                 // TODO: special types wont work for now
-                string[] skipTemporarily = { "GroupAttachments", "NotificationMode", "InheritableApprovingMode", 
-                    "InheritableVersioningMode", "ApprovingMode", "VersioningMode", 
-                    "SeeAlso", "TrashDisabled", "RateAvg", "NotificationMode", "Description" };
-                if (skipTemporarily.Any(x => x == fieldName))
+                if (Program._appConfig.ExcludedImportFields.Any(x => x == fieldName))
                     continue;
 
                 // TODO: check if xmlnodelist is only available with reference field or should filter for Path nodes
@@ -121,10 +118,6 @@ namespace SnLiveExportImport
                             content[fieldName] = fieldNode.InnerText;
                             isModified = true;
                         }
-                        //content[fieldName] = fieldNode.InnerText;
-
-
-                        // TODO: BUT reference field not should be updated at first round, only after when all the content is present in repository
                     }
                 }
                 else

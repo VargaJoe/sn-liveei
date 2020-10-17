@@ -18,18 +18,6 @@ namespace SnLiveExportImport
     {
         public static List<JObject> ContentTypes { get; set; }
         public static List<JObject> ContentFields { get; set; }
-        public static string[] excludeFields = { "ParentId", "Id", "Name", "Version", "VersionId", 
-            "Path", "Depth", "Type", "TypeIs", "InTree", "InFolder", "IsSystemContent", "HandlerName", 
-            "ParentTypeName", "CreatedById", "ModifiedById", "AllFieldSettingContents", "OwnerId", 
-            "EffectiveAllowedChildTypes", "VersioningMode", "AllRoles", "DirectRoles", "CheckedOutTo", 
-            "InheritableVersioningMode", "VersionCreatedBy", "VersionCreationDate", "VersionModifiedBy", 
-            "VersionModificationDate", "ApprovingMode", "InheritableApprovingMode", "SavingState", 
-            "ExtensionData", "BrowseApplication", "Versions", "CheckInComments", "RejectReason", 
-            "Workspace", "BrowseUrl", "Sharing", "SharedWith", "SharedBy", "SharingMode", "SharingLevel", 
-            "Actions", "IsFile", "Children", "Publishable", "Locked", "Rate", "RateStr", "Tags", "Approvable",
-            "AllowedChildTypes", "IsFolder", "Icon", "WorkspaceSkin", "AvailableViews", "FieldSettingContents", 
-            "AvailableContentTypeFields", "OwnerWhenVisitor" };
-        public static string[] fileTypes = { "File", "Image" };
 
         public static void StartExport()
         {
@@ -40,17 +28,19 @@ namespace SnLiveExportImport
             ContentFields = GetFields(ContentTypes);
 
             // TODO: get variables from parameters and/or settings
-            //string sourceRepoPath = "/Root/Content";
-            string sourceRepoPath = "/Root";
-            string targetBasePath = "./export";
-            //string fsTargetRepoPath = $".{sourceRepoPath.Replace("/Root", "")}";
+            int lastSlash = Program._appConfig.RepoPath.LastIndexOf("/");
+            string sourceRepoParentPath = Program._appConfig.RepoPath.Substring(0, lastSlash);
+            string sourceRepoPath = Program._appConfig.RepoPath;
+            string targetBasePath = Program._appConfig.LocalPath;
 
             string queryPath = string.Empty;
-            bool all = true;
-            bool sync = true;
+            bool all = Program._appConfig.TreeExport;
+            bool syncmode = Program._appConfig.SyncMode;
 
             //string combino = Path.Combine(targetBasePath, fsTargetRepoPath);
-            string cbPath = (sync) ? targetBasePath : $"{targetBasePath}{DateTime.Now.Ticks}";
+            //string cbPath = (syncmode) ? targetBasePath : $"{targetBasePath}{DateTime.Now.Ticks}";
+            string fsSourceRepoParentPath = $".{sourceRepoParentPath}";
+            string cbPath = (syncmode) ? Path.Combine(targetBasePath, fsSourceRepoParentPath) : $"{targetBasePath}{DateTime.Now.Ticks}";
             string fsPath = Path.GetFullPath(cbPath);
 
             //var query = $"+Type:ContentType";
@@ -146,7 +136,7 @@ namespace SnLiveExportImport
                 return;
 
             // don't walk under file types
-            if (fileTypes.Any(f => f == contentType))
+            if (Program._appConfig.FileTypes.Any(f => f == contentType))
                 return;
 
             // TODO: should skip any non-folder types
@@ -318,7 +308,7 @@ namespace SnLiveExportImport
             {                
                 var value = content[field] as JObject;
                 //if (field.Name != "Name" && field.Name != "Versions")
-                if (!excludeFields.Any(f => f == field)                    
+                if (!Program._appConfig.ExcludedExportFields.Any(f => f == field)                    
                     //&& value != null && !string.IsNullOrWhiteSpace(value?.ToString())
                     )
                 {
@@ -432,7 +422,7 @@ namespace SnLiveExportImport
                 var fieldName = field.Name;
                 var fieldValue = field.Value;
 
-                if (!excludeFields.Any(f => f == fieldName))
+                if (!Program._appConfig.ExcludedExportFields.Any(f => f == fieldName))
                 {
                     var contentField = ContentFields.FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
                     if (contentField == null)

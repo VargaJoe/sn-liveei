@@ -12,33 +12,31 @@ namespace SnLiveExportImport
 {
     public static class LiveImport
     {
-        public static string ContentTypesFolderPath = "/Root/System/Schema/ContentTypes";
-        public static string[] fileTypes = { "File", "Image" };
-        private static string continueFrom; 
-
         public static void ImportContent()
         {
-            CreateRefLog(continueFrom == null);
+            CreateRefLog(string.IsNullOrEmpty(Program._appConfig.ContinueFrom));
 
             // TODO: get variables from parameters and/or settings
-            string targetRepoParentPath = "/Root";
-            string targetRepoPath = "/Root/Content";
-            string sourceBasePath = "./import"; 
-            bool sync = true; 
+            int lastSlash = Program._appConfig.RepoPath.LastIndexOf("/");
+            string targetRepoParentPath = Program._appConfig.RepoPath.Substring(0, lastSlash);
+            string targetRepoPath = Program._appConfig.RepoPath;
+            string sourceBasePath = Program._appConfig.LocalPath;
+            bool syncmode = Program._appConfig.SyncMode; 
             bool validate = false;
 
-            string fsTargetRepoPath = $".{targetRepoPath.Replace("/Root", "")}";
-            string cbPath = (sync) ? Path.Combine(sourceBasePath, fsTargetRepoPath) : sourceBasePath;
+            //string fsTargetRepoPath = $".{targetRepoPath.Replace("/Root", "")}";
+            string fsTargetRepoPath = $".{targetRepoPath}";
+            string cbPath = (syncmode) ? Path.Combine(sourceBasePath, fsTargetRepoPath) : sourceBasePath;
             string fsPath = Path.GetFullPath(cbPath);
             
             Log.Information($"target parent path: {targetRepoParentPath}");
             Log.Information($"target repo path: {targetRepoPath}");
             Log.Information($"source path: {sourceBasePath}");
-            Log.Information($"sync: {sync}");
+            Log.Information($"sync: {syncmode}");
             Log.Information($"combined path: {cbPath}");
             Log.Information($"filesystem path: {fsPath}");
 
-            if (sync && File.Exists(fsPath + ".Content"))
+            if (syncmode && File.Exists(fsPath + ".Content"))
             {
                 Log.Information($"file exists: {fsPath}.Content");
 
@@ -69,7 +67,6 @@ namespace SnLiveExportImport
                 return;
             }
 
-            Content importTarget = null;
             Log.Information("");
             Log.Information("=================== Continuing Import ========================");
             Log.Information($"From: {srcPath}" );
@@ -80,24 +77,13 @@ namespace SnLiveExportImport
             //    Log.Information("Content validation: OFF");
             Log.Information("==============================================================");
 
-            if (targetPath != null)
-            {
-                importTarget = Content.LoadAsync(targetPath).GetAwaiter().GetResult();
-                if (importTarget == null)
-                {
-                    Log.Warning("Target container was not found: ");
-                    Log.Information(targetPath);
-                    return;
-                }
-            }
-
             try
             {
                 // list for tasks after content import
                 List<ContentInfo> postponedList = new List<ContentInfo>();
 
                 // first round create or update contents 
-                TreeWalker(srcPath, pathIsFile, importTarget, "  ", postponedList, validate);
+                TreeWalker(srcPath, pathIsFile, targetPath, "  ", postponedList, validate);
 
                 // after all contents are imported can references updated
                 if (postponedList.Count != 0)
@@ -112,10 +98,10 @@ namespace SnLiveExportImport
             Log.Information("========================================");
         }
 
-        private static void TreeWalker(string path, bool pathIsFile, Content folder, string indent, List<ContentInfo> postponedList, bool validate)
+        private static void TreeWalker(string path, bool pathIsFile, string parentPath, string indent, List<ContentInfo> postponedList, bool validate)
         {
 
-            if (!string.IsNullOrWhiteSpace(folder.Path) && folder.Path.StartsWith(ContentTypesFolderPath))
+            if (!string.IsNullOrWhiteSpace(parentPath) && parentPath.StartsWith(Program._appConfig.ContentTypesFolderPath))
             {
                 //-- skip CTD folder
                 Log.Information($"Skipped path: {path}");
@@ -160,17 +146,17 @@ namespace SnLiveExportImport
             {
                 var continuing = false;
                 var stepDown = true;
-                if (continueFrom != null)
+                if (Program._appConfig.ContinueFrom != null)
                 {
                     continuing = true;
-                    if (contentInfo.MetaDataPath == continueFrom)
+                    if (contentInfo.MetaDataPath == Program._appConfig.ContinueFrom)
                     {
-                        continueFrom = null;
+                        Program._appConfig.ContinueFrom = null;
                         continuing = false;
                     }
                     else
                     {
-                        stepDown = continueFrom.StartsWith(contentInfo.MetaDataPath);
+                        stepDown = Program._appConfig.ContinueFrom.StartsWith(contentInfo.MetaDataPath);
                     }
                 }
 
@@ -178,7 +164,7 @@ namespace SnLiveExportImport
                 Content content = null;
                 try
                 {
-                    content = CreateOrLoadContent(contentInfo, folder, ref isNewContent);
+                    content = CreateOrLoadContent(contentInfo, parentPath, ref isNewContent);
                 } 
                 catch (Exception ex)
                 {
@@ -246,31 +232,31 @@ namespace SnLiveExportImport
                     if (contentInfo.IsFolder)
                     {
                         if (content != null)
-                            TreeWalker(contentInfo.ChildrenFolder, false, content, indent + "  ", postponedList, validate);
+                            TreeWalker(contentInfo.ChildrenFolder, false, content.Path, indent + "  ", postponedList, validate);
                     }
                 }
                 Thread.Sleep(500);
             }
         }
 
-        private static Content CreateOrLoadContent(ContentInfo contentInfo, Content targetRepoParent, ref bool isNewContent)
+        private static Content CreateOrLoadContent(ContentInfo contentInfo, string targetRepoParentPath, ref bool isNewContent)
         {
-            string path = RepositoryPath.Combine(targetRepoParent.Path, contentInfo.Name);
+            string path = RepositoryPath.Combine(targetRepoParentPath, contentInfo.Name);
             isNewContent = false;
             Content content = Content.LoadAsync(path).GetAwaiter().GetResult();
             if (content == null)
             {
                 // need list of nodetypes descended from file
-                if (!fileTypes.Any(f => f == contentInfo.ContentTypeName))
+                if (!Program._appConfig.FileTypes.Any(f => f == contentInfo.ContentTypeName))
                 {
-                    content = Content.CreateNew(targetRepoParent.Path, contentInfo.ContentTypeName, contentInfo.Name);
+                    content = Content.CreateNew(targetRepoParentPath, contentInfo.ContentTypeName, contentInfo.Name);
                     isNewContent = true;
                 }
                 else
                 {
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
-                        content = Content.UploadAsync(targetRepoParent.Path, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
+                        content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
                         isNewContent = true;
                     }
                 }

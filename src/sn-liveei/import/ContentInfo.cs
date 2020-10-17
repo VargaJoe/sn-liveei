@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Serilog;
 using SenseNet.Client.Security;
 using System.Threading;
+using System.Linq;
 
 namespace SnLiveExportImport.ContentImporter
 {
@@ -196,7 +197,7 @@ namespace SnLiveExportImport.ContentImporter
                 result = ContentMetaData.SetFields(content, _transferringContext);
             }
             // only should save if newcontent OR field have changed
-            if ((isNewContent && cType != "File" && cType != "Image") || result)
+            if ((isNewContent && !Program._appConfig.FileTypes.Any(f => f == cType)) || result)
             {
                 content.SaveAsync().GetAwaiter().GetResult();
                 _contentId = content.Id;
