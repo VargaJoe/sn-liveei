@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Serilog;
 using SenseNet.Client.Security;
 using System.Threading;
+using System.Linq;
 
 namespace SnLiveExportImport.ContentImporter
 {
@@ -186,26 +187,26 @@ namespace SnLiveExportImport.ContentImporter
         public bool SetMetadata(Content content, string currentDirectory, bool isNewContent, bool needToValidate, bool updateReferences)
         {
             bool result = false;
+            string cType = content["Type"]?.ToString();
             if (_xmlDoc != null)
             {
-                var cType = _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText;
+                cType = _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText;
                 _transferringContext = new ImportContext(
                     _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), cType, currentDirectory, isNewContent, needToValidate, updateReferences);
 
                 result = ContentMetaData.SetFields(content, _transferringContext);
+            }
+            // only should save if newcontent OR field have changed
+            if ((isNewContent && !Program._appConfig.FileTypes.Any(f => f == cType)) || result)
+            {
+                content.SaveAsync().GetAwaiter().GetResult();
+                _contentId = content.Id;
 
-                // only should save if newcontent OR field have changed
-                if ((isNewContent && cType != "File" && cType != "Image") || result)
+                if (content.Id == 0)
                 {
-                    content.SaveAsync().GetAwaiter().GetResult();
-                    _contentId = content.Id;
-
-                    if (content.Id == 0)
-                    {
-                        Log.Error($"Something went wrong! {content?.Name}");
-                    }
+                    Log.Error($"Something went wrong! {content?.Name}");
                 }
-            }          
+            }
 
             return result;
         }
