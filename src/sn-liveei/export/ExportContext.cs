@@ -9,6 +9,7 @@ namespace SnLiveExportImport
 {
 	public class ExportContext
 	{
+		private const string ContentTypesFolderPath = "/Root/System/Schema/ContentTypes";
 		private List<string> _outerReferences;
 		public string SourceFsPath { get; private set; }
 		public string CurrentDirectory { get; set; }
@@ -28,23 +29,11 @@ namespace SnLiveExportImport
 			_sourceRoot = String.Concat(sourceRepositoryPath, sourceRepositoryPath.EndsWith("/") ? "" : "/");
 			_outerReferences = new List<string>();
 
-            if (sourceRepositoryPath == "/Root")
+			if (ContentTypesFolderPath.StartsWith(sourceRepositoryPath))
             {
-                ContentTypeDirectory = Path.Combine(targetFsPath, "Root/System/Schema/ContentTypes");
-            }
-            else
-            if (sourceRepositoryPath == "/Root/System")
-            {
-				ContentTypeDirectory = Path.Combine(targetFsPath, "System/Schema/ContentTypes");
-			}
-			if (sourceRepositoryPath == "/Root/System/Schema")
-			{
-				ContentTypeDirectory = Path.Combine(targetFsPath, "Schema/ContentTypes");
-			}
-            else
-			if (sourceRepositoryPath == "/Root/System/Schema/ContentTypes")
-			{
-				ContentTypeDirectory = Path.Combine(targetFsPath, "ContentTypes");
+				var lastSlash = sourceRepositoryPath.LastIndexOf("/");
+				var relativePath = ContentTypesFolderPath.Substring(lastSlash + 1);
+				ContentTypeDirectory = Path.Combine(targetFsPath, relativePath);
 			}
         }
 		public void AddReference(string path)
