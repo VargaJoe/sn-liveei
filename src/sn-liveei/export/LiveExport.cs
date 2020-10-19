@@ -170,25 +170,75 @@ namespace SnLiveExportImport
             }
         }
 
+        private static void ExportContentTree(Content content, ExportContext context, string fsPath, string indent)
+        {
+            ExportContent(content, context, fsPath, indent);
+
+            var contentType = content["Type"]?.ToString();
+            var contentName = content["Name"]?.ToString();
+
+            if (string.IsNullOrWhiteSpace(contentName))
+                return;
+
+            if (contentType == "SmartFolder")
+                return;
+
+            // don't walk under file types
+            if (Program._appConfig.FileTypes.Any(f => f == contentType))
+                return;
+
+            // TODO: should skip any non-folder types
+
+            var server = ClientContext.Current.Server;
+            var contentPath = content["Path"]?.ToString();
+
+            // walk through only if it has children
+            //JObject contentAsFolder = LoadContainerAsyncJObject($"{server.Url}/odata.svc{contentPath}?metadata=no", ClientContext.Current.Server);
+
+            var children = Content.LoadCollectionAsync(contentPath).GetAwaiter().GetResult();
+
+            if (children == null)
+                return;
+
+            int childCount = children.Count();
+
+            //var queryResult = contentAsFolder.GetChildren(new QuerySettings { EnableAutofilters = false, EnableLifespanFilter = false });
+            //var childCount = queryResult.Count;
+
+            if (childCount == 0)
+                return;
+            
+            var newDir = Path.Combine(fsPath, contentName);
+
+            if (contentType != "ContentType")
+                Directory.CreateDirectory(newDir);
+
+            var newIndent = indent + "  ";
+            foreach (Content childContent in children)
+            {
+                ExportContentTree(childContent, context, newDir, newIndent);
+            }
+        }
+
         private static void ExportContent(Content content, ExportContext context, string fsPath, string indent)
         {
-            //if (content.ContentHandler is ContentType)
-            //{
-            //    //Log
-            //    Log.Information(content.Path, content.Name);
-            //    //Log
-
-            //    ExportContentType(content, context, indent);
-            //    return;
-            //}
-
             context.CurrentDirectory = fsPath;
+            var contentPath = content?["Path"]?.ToString();
+            var contentName = content?["Name"]?.ToString();
+            var contentType = content["Type"]?.ToString();
 
-            //Log
-            Log.Information(content.Path, content.Name);
-            //Log
+            if (contentType == "ContentType")
+            {
+                Log.Information($"{contentPath} (TODO)");
 
-            string metaFilePath = Path.Combine(fsPath, content.Name + ".Content");
+                // TODO:
+                //ExportContentType(content, context, indent);
+                return;
+            }
+
+            Log.Information(contentPath);
+
+            string metaFilePath = Path.Combine(fsPath, contentName + ".Content");
             XmlWriterSettings settings = new XmlWriterSettings();
             settings.Encoding = Encoding.UTF8;
             settings.Indent = true;
@@ -203,8 +253,8 @@ namespace SnLiveExportImport
                 //        ...
                 writer.WriteStartDocument();
                 writer.WriteStartElement("ContentMetaData");
-                writer.WriteElementString("ContentType", content["Type"].ToString());
-                writer.WriteElementString("ContentName", content.Name);
+                writer.WriteElementString("ContentType", content["Type"]?.ToString());
+                writer.WriteElementString("ContentName", contentName);
                 writer.WriteStartElement("Fields");
                 try
                 {
@@ -278,44 +328,68 @@ namespace SnLiveExportImport
 
         public static void ExportFieldData(Content content, XmlWriter writer, ExportContext context)
         {
+            var server = ClientContext.Current.Server;
+            var baseUrl = server.Url;
+
             // first of all: exporting aspect names
             if (content != null)
             {
-                var aspects = content["Aspects"] as string[];
-                if (aspects != null && aspects.Length > 0)
-                    writer.WriteElementString("Aspects", String.Join(", ", aspects));
+                JArray aspects = content["Aspects"] as JArray;
+                if (aspects != null && aspects.Count > 0)
+                    writer.WriteElementString("Aspects", String.Join(", ", aspects.Select(j => j.ToString())));
             }
+            var contentName = content["Name"]?.ToString();
+            var contentType = content["Type"]?.ToString();
+            var typeContent = ContentTypes.FirstOrDefault(c => c["ContentTypeName"]?.ToString() == contentType);
 
+            // exit if content type is "ContentType" 
+            if (contentType == "ContentType")
+                return;
 
-
-            //foreach (JProperty f in test["d"])
-            //{
-            //    var fieldName = f.Name;
-            //    var fieldValue = f.Value;
-            //}
+            var contentId = 0;
+            if (!int.TryParse(content["Id"]?.ToString(), out contentId) || contentId == 0)
+                return;
 
             // exporting other fields
-            //if (this.ContentHandler is ContentType)
-            //    return;
-            // exit if content type is "ContentType" 
+            //foreach (JObject field in typeContent["FieldSettings"])
+            //{
+            //    var fieldType = field["Type"]?.ToString().Replace("FieldSetting", "");
+            //    if (string.IsNullOrWhiteSpace(fieldType))
+            //        continue;
 
-            //var fields = content.GetType().GetProperties();
+            //    var fieldName = field["Name"]?.ToString();
+            //    if (excludeFields.Any(f => f == fieldName))
+            //        continue;
 
-            List<string> fields = GetCtd(content);
+            //    var fieldValue = content[fieldName];
 
-            //var fields = content["Fields"];
-            foreach (var field in fields)
-            {                
-                var value = content[field] as JObject;
-                //if (field.Name != "Name" && field.Name != "Versions")
-                if (!Program._appConfig.ExcludedExportFields.Any(f => f == field)                    
-                    //&& value != null && !string.IsNullOrWhiteSpace(value?.ToString())
-                    )
+            // schemas from getschema have only local field definitions
+            //}
+
+            var contentTypeFromSchema = ContentTypes.FirstOrDefault(ct => ct["ContentTypeName"]?.ToString() == contentType);
+            var contentTypeFields = contentTypeFromSchema["FieldSettings"];
+
+            foreach (JObject contentField in contentTypeFields)
+            {
+                var fieldName = contentField["Name"]?.ToString();
+
+                if (!Program._appConfig.ExcludedExportFields.Any(f => f == fieldName))
                 {
-                    //if (ReadOnly)
-                    //    return;
-                    //if (GetData() == null)
-                    //    return;
+                    if (contentField == null)
+                        continue;
+
+                    if (bool.TryParse(contentField["ReadOnly"]?.ToString(), out bool readOnly) && readOnly)
+                        continue;
+
+                    var fieldType = contentField["Type"]?.ToString().Replace("FieldSetting", "");
+                    var fieldValue = content[fieldName];
+                    var fieldValueType = fieldValue.GetType().Name;
+
+                    if (string.IsNullOrWhiteSpace(fieldType))
+                        continue;
+
+                    if (((JToken)fieldValue).Type == JTokenType.Null)
+                        continue;
 
                     //if (!HasExportData)
                     //    return;
@@ -323,55 +397,135 @@ namespace SnLiveExportImport
                     //FieldSubType subType;
                     //var exportName = GetExportName(this.Name, out subType);
 
-                    //writer.WriteStartElement(exportName);
-                    writer.WriteStartElement(field);
+                    //writer.WriteStartElement(fieldName);
                     //if (subType != FieldSubType.General)
                     //    writer.WriteAttributeString(FIELDSUBTYPEATTRIBUTENAME, subType.ToString());
 
                     //ExportData(writer, context);
                     //var d = ((JObject)content[field])["__deferred"]["uri"];
-                    if (value != null && value["__deferred"] != null)
+                    switch (fieldType)
                     {
-                        // reference value
-                        var deferredUri = value["__deferred"]["uri"]?.ToString();
-                        var baseUrl = content.Server.Url;
-
-                        object refResponse = null;
-                        RESTCaller.ProcessWebResponseAsync($"{baseUrl}{deferredUri}", System.Net.Http.HttpMethod.Get, content.Server, async response =>
-                        {
-                            if (response == null)
-                                return;
-                            using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-                            using (var reader = new StreamReader(stream))
+                        case "DateTime":
+                            DateTime workaroundDate = DateTime.MinValue;
+                            if (DateTime.TryParse(fieldValue?.ToString(), out workaroundDate))
                             {
-                                var textResponse = reader.ReadToEnd();
-                                refResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(textResponse);
-                            }
-                        }, CancellationToken.None).GetAwaiter().GetResult();
-
-                        if (refResponse is JObject)
-                        {
-                            writer.WriteStartElement("Path");
-                            writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
-                            writer.WriteEndElement();
-                        }
-                        else if (refResponse is JArray)
-                        {
-                            foreach (var refField in refResponse as JArray)
-                            {
-                                writer.WriteStartElement("Path");
-                                writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                writer.WriteStartElement(fieldName);
+                                writer.WriteString(workaroundDate.ToString("yyyy-MM-ddTHH:mm:ss"));
                                 writer.WriteEndElement();
                             }
-                        }
+                            break;
+                        case "Reference":
+                            var deferredUri = ((JObject)fieldValue)["__deferred"]?["uri"]?.ToString();
+                            
+                            if (string.IsNullOrWhiteSpace(deferredUri))
+                                continue;
 
-                    }
-                    else
-                    {
-                        writer.WriteString(content[field]?.ToString());
-                    }
+                            object refResponse = null;
+                            RESTCaller.ProcessWebResponseAsync($"{baseUrl}{deferredUri}", System.Net.Http.HttpMethod.Get, server, async response =>
+                            {
+                                if (response == null)
+                                    return;
+                                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                                using (var reader = new StreamReader(stream))
+                                {
+                                    var textResponse = reader.ReadToEnd();
+                                    refResponse = Newtonsoft.Json.JsonConvert.DeserializeObject(textResponse);
+                                }
+                            }, CancellationToken.None).GetAwaiter().GetResult();
 
-                    writer.WriteEndElement();
+                            if (refResponse != null)
+                            {
+                                writer.WriteStartElement(fieldName);
+                                if (((JObject)refResponse)["d"]["__count"] != null)
+                                {
+                                    // multiple references
+                                    var refResults = ((JObject)refResponse)["d"]["results"] as JArray;
+                                    foreach (var refField in refResults)
+                                    {
+                                        writer.WriteStartElement("Path");
+                                        writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                        writer.WriteEndElement();
+                                    }
+                                }
+                                else
+                                {
+                                    // only single reference
+                                    writer.WriteStartElement("Path");
+                                    writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
+                                    writer.WriteEndElement();
+                                }
+                                writer.WriteEndElement();
+                            }
+                            break;
+                        case "ShortText":
+                        case "LongText":
+                        case "Integer":
+                        case "Number":
+                        case "Null":
+                            writer.WriteStartElement(fieldName);
+                            writer.WriteString(fieldValue?.ToString());
+                            writer.WriteEndElement();
+                            break;
+                        case "Choice":
+                            writer.WriteStartElement(fieldName);
+                            writer.WriteString(string.Join(',', fieldValue));
+                            writer.WriteEndElement();
+                            break;
+                        case "Binary":
+                            var binUrl = ((JObject)fieldValue)["__mediaresource"]?["media_src"]?.ToString();
+                            if (string.IsNullOrWhiteSpace(binUrl))
+                                continue;
+
+                            RESTCaller.ProcessWebResponseAsync($"{baseUrl}{binUrl}", System.Net.Http.HttpMethod.Get, server, async response =>
+                            {
+                                if (response == null)
+                                    return;
+
+                                var fsDirectory = context.CurrentDirectory;
+                                var fileName = contentName;
+                                byte[] fileBytes;
+
+                                using (var sourceStream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                                {
+                                    using (var helperStream = new MemoryStream())
+                                    {
+                                        sourceStream.CopyTo(helperStream);
+                                        fileBytes = helperStream.ToArray();
+                                    }
+                                }
+
+                                // extension workaround
+                                if (fieldName != "Binary")
+                                {
+                                    var mime = "";// fieldValue["__mediaresource"]?["content_type"]?.ToString();
+                                    var ext = GetDefaultExtension(mime);
+
+                                    var magic = GetMime(fileBytes.Take(256).ToArray());
+                                    ext = GetDefaultExtension(magic);
+
+                                    if (string.IsNullOrWhiteSpace(ext) && fieldName == "ImageData")
+                                        ext = "jpg";
+
+                                    fileName += "." + fieldName + ext;
+                                }
+                                var fsPath = Path.Combine(fsDirectory, fileName);
+
+                                writer.WriteStartElement(fieldName);
+                                writer.WriteAttributeString("attachment", fileName);
+
+                                using (var targetFile = new FileStream(fsPath, FileMode.Create))
+                                {
+                                    for (var i = 0; i < fileBytes.Length; i++)
+                                        targetFile.WriteByte((byte)fileBytes[i]);
+                                }
+
+                                writer.WriteEndElement();
+                            }, CancellationToken.None).GetAwaiter().GetResult();
+                            break;
+                        default:
+                            Log.Warning($"NOT IMPLEMENTED: {fieldType}");
+                            break;
+                    }
                 }
             }
         }
@@ -425,12 +579,15 @@ namespace SnLiveExportImport
 
                 if (!Program._appConfig.ExcludedExportFields.Any(f => f == fieldName))
                 {
-                    //var contentField = ContentFields.FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
-                    var contentField = contentTypeFromSchema["FieldSettings"].FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
+                    // not all fields can be fount on given contenttype
+                    var contentField = ContentFields.FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
+                    var contentFieldOwn = contentTypeFromSchema["FieldSettings"].FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
+
                     if (contentField == null)
                         continue;
-                                        
-                    if (bool.TryParse(contentField["ReadOnly"]?.ToString(), out bool readOnly) && readOnly)
+                    
+                    // readonly field varies by content types
+                    if (contentFieldOwn != null && bool.TryParse(contentFieldOwn["ReadOnly"]?.ToString(), out bool readOnly) && readOnly)
                         continue;
 
                     var fieldType = contentField["Type"]?.ToString().Replace("FieldSetting", "");
@@ -511,6 +668,7 @@ namespace SnLiveExportImport
                         case "LongText":
                         case "Integer":
                         case "Number":
+                        case "Null":
                             writer.WriteStartElement(fieldName);
                             writer.WriteString(fieldValue?.ToString());
                             writer.WriteEndElement();
@@ -570,9 +728,6 @@ namespace SnLiveExportImport
 
                                     writer.WriteEndElement();
                                 }, CancellationToken.None).GetAwaiter().GetResult();
-                            break;
-                        case "Null":
-                            // not exported
                             break;
                         default:
                             Log.Warning($"NOT IMPLEMENTED: {fieldType}");
