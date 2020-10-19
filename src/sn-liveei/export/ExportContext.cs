@@ -9,6 +9,7 @@ namespace SnLiveExportImport
 {
 	public class ExportContext
 	{
+		private const string ContentTypesFolderPath = "/Root/System/Schema/ContentTypes";
 		private List<string> _outerReferences;
 		public string SourceFsPath { get; private set; }
 		public string CurrentDirectory { get; set; }
@@ -28,31 +29,13 @@ namespace SnLiveExportImport
 			_sourceRoot = String.Concat(sourceRepositoryPath, sourceRepositoryPath.EndsWith("/") ? "" : "/");
 			_outerReferences = new List<string>();
 
-			//if (sourceRepositoryPath == "/Root")
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.RootName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.SystemFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.SchemaFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.ContentTypesFolderName);
-			//}
-			//else 
-			//if (sourceRepositoryPath == Repository.SystemFolderPath)
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.SystemFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.SchemaFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.ContentTypesFolderName);
-			//}
-			//else if (sourceRepositoryPath == Repository.SchemaFolderPath)
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.SchemaFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.ContentTypesFolderName);
-			//}
-			//else 
-			//if (sourceRepositoryPath == Repository.ContentTypesFolderPath)
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.ContentTypesFolderName);
-			//}
-		}
+			if (ContentTypesFolderPath.StartsWith(sourceRepositoryPath))
+            {
+				var lastSlash = sourceRepositoryPath.LastIndexOf("/");
+				var relativePath = ContentTypesFolderPath.Substring(lastSlash + 1);
+				ContentTypeDirectory = Path.Combine(targetFsPath, relativePath);
+			}
+        }
 		public void AddReference(string path)
 		{
 			if (path == SourceFsPath)
