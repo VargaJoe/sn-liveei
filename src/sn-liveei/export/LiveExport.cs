@@ -17,12 +17,15 @@ namespace SnLiveExportImport
     public static class LiveExport
     {
         public static List<JObject> ContentTypes { get; set; }
+        public static List<Content> ContentTypeContents { get; set; }
         public static List<JObject> ContentFields { get; set; }
 
         public static void StartExport()
         {
             // prepare ctd info
             ContentTypes = GetCtds();
+
+            ContentTypeContents = Content.QueryForAdminAsync("Type:ContentType").GetAwaiter().GetResult().ToList();
 
             // prepare field info
             ContentFields = GetFields(ContentTypes);
@@ -42,9 +45,6 @@ namespace SnLiveExportImport
             string fsSourceRepoParentPath = $".{sourceRepoParentPath}";
             string cbPath = (syncmode) ? Path.Combine(targetBasePath, fsSourceRepoParentPath) : $"{targetBasePath}{DateTime.Now.Ticks}";
             string fsPath = Path.GetFullPath(cbPath);
-
-            //var query = $"+Type:ContentType";
-            //ContentTypes = Content.QueryAsync(query, new string[0], new string[0], new QuerySettings() { EnableAutofilters = FilterStatus.Disabled }).GetAwaiter().GetResult().ToList();
 
             ExportContents(sourceRepoPath, fsPath, all);
         }
@@ -231,8 +231,7 @@ namespace SnLiveExportImport
             {
                 Log.Information($"{contentPath} (TODO)");
 
-                // TODO:
-                //ExportContentType(content, context, indent);
+                ExportContentType(content.Name, content["Type"]?.ToString(), context);
                 return;
             }
 
@@ -246,11 +245,6 @@ namespace SnLiveExportImport
 
             using (XmlWriter writer = XmlWriter.Create(metaFilePath, settings))
             {
-                //<?xml version="1.0" encoding="utf-8"?>
-                //<ContentMetaData>
-                //    <ContentType>Site</ContentType>
-                //    <Fields>
-                //        ...
                 writer.WriteStartDocument();
                 writer.WriteStartElement("ContentMetaData");
                 writer.WriteElementString("ContentType", content["Type"]?.ToString());
@@ -284,8 +278,7 @@ namespace SnLiveExportImport
             {
                 Log.Information($"{contentPath} (TODO)");
 
-                // TODO:
-                //ExportContentType(content, context, indent);
+                ExportContentType(content["Name"]?.ToString(), content["Type"]?.ToString(), context);
                 return;
             }
 
@@ -737,6 +730,44 @@ namespace SnLiveExportImport
             }
         }
 
+        private static void ExportContentType(Content content, ExportContext context, string indent)
+        {
+            //BinaryData binaryData = ((ContentType)content.ContentHandler).Binary;
+
+            var fileName = content.Name + "Ctd.xml";
+            //var fsPath = Path.Combine(context.ContentTypeDirectory, fileName);
+            var fsPath = Path.Combine(context.SourceFsPath, fileName);
+            var ctdString = GetCtdXml(content["Type"]?.ToString());
+
+            Stream source = null;
+            using (FileStream target = new FileStream(fsPath, FileMode.Create))
+            {
+                byte[] byteArray = Encoding.UTF8.GetBytes(ctdString);
+                for (var i = 0; i < source.Length; i++)
+                    target.WriteByte((byte)source.ReadByte());
+            }
+        }
+
+        private static void ExportContentType(string contentName, string contentType, ExportContext context)
+        {
+            //BinaryData binaryData = ((ContentType)content.ContentHandler).Binary;
+
+            var fileName = contentName + "Ctd.xml";
+            //var fsPath = Path.Combine(context.ContentTypeDirectory, fileName);
+            var fsPath = Path.Combine(context.ContentTypeDirectory, fileName);
+            var ctdString = GetCtdXml(contentType);
+
+            using (FileStream target = new FileStream(fsPath, FileMode.Create))
+            {
+                byte[] byteArray = Encoding.UTF8.GetBytes(ctdString);
+                foreach (var bt in byteArray)
+                {
+                    target.WriteByte(bt);
+                }
+            }
+        }
+
+
         public static string GetDefaultExtension(string mimeType)
         {
             string result;
@@ -780,36 +811,21 @@ namespace SnLiveExportImport
             return result;
         }
 
-        public static List<string> GetCtd(Content content)
+        public static string GetCtdXml(string contentTypeName)
         {
-            //var ctdContent = ContentTypes.FirstOrDefault(c => c.Name == content["Type"].ToString());
+            var ctdContent = ContentTypeContents.FirstOrDefault(c => c.Name == contentTypeName);
 
-            //string ctd = null;
-            //RESTCaller.GetStreamResponseAsync(ctdContent.Id, async response =>
-            //{
-            //    if (response == null)
-            //        return;
-            //    using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
-            //    using (var reader = new StreamReader(stream))
-            //        ctd = reader.ReadToEnd();
-            //}, CancellationToken.None).GetAwaiter().GetResult();
-
-            List<string> result = new List<string>();
-
-            var a = new ODataRequest() { Path = "/Root", ActionName = "GetSchema", AutoFilters = FilterStatus.Disabled, LifespanFilter = FilterStatus.Disabled, Metadata = MetadataFormat.None };
-            var c = RESTCaller.GetResponseStringAsync(a).GetAwaiter().GetResult();
-            //var d = JsonHelper.Deserialize(c.Substring(1, c.Length - 2).Replace("\n", "").Trim());
-            var d = Newtonsoft.Json.JsonConvert.DeserializeObject(c) as JArray;
-
-            var jo = d.FirstOrDefault();
-            var jfs = jo["FieldSettings"];
-
-            foreach (JObject setting in jfs)
+            string ctd = null;
+            RESTCaller.GetStreamResponseAsync(ctdContent.Id, async response =>
             {
-                result.Add(setting["Name"].ToString());
-            }
+                if (response == null)
+                    return;
+                using (var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                using (var reader = new StreamReader(stream))
+                    ctd = reader.ReadToEnd();
+            }, CancellationToken.None).GetAwaiter().GetResult();
 
-            return result;
+            return ctd;
         }
 
         public static List<JObject> GetCtds()

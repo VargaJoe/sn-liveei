@@ -28,31 +28,25 @@ namespace SnLiveExportImport
 			_sourceRoot = String.Concat(sourceRepositoryPath, sourceRepositoryPath.EndsWith("/") ? "" : "/");
 			_outerReferences = new List<string>();
 
-			//if (sourceRepositoryPath == "/Root")
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.RootName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.SystemFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.SchemaFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.ContentTypesFolderName);
-			//}
-			//else 
-			//if (sourceRepositoryPath == Repository.SystemFolderPath)
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.SystemFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.SchemaFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.ContentTypesFolderName);
-			//}
-			//else if (sourceRepositoryPath == Repository.SchemaFolderPath)
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.SchemaFolderName);
-			//	ContentTypeDirectory = Path.Combine(ContentTypeDirectory, Repository.ContentTypesFolderName);
-			//}
-			//else 
-			//if (sourceRepositoryPath == Repository.ContentTypesFolderPath)
-			//{
-			//	ContentTypeDirectory = Path.Combine(targetFsPath, Repository.ContentTypesFolderName);
-			//}
-		}
+            if (sourceRepositoryPath == "/Root")
+            {
+                ContentTypeDirectory = Path.Combine(targetFsPath, "Root/System/Schema/ContentTypes");
+            }
+            else
+            if (sourceRepositoryPath == "/Root/System")
+            {
+				ContentTypeDirectory = Path.Combine(targetFsPath, "System/Schema/ContentTypes");
+			}
+			if (sourceRepositoryPath == "/Root/System/Schema")
+			{
+				ContentTypeDirectory = Path.Combine(targetFsPath, "Schema/ContentTypes");
+			}
+            else
+			if (sourceRepositoryPath == "/Root/System/Schema/ContentTypes")
+			{
+				ContentTypeDirectory = Path.Combine(targetFsPath, "ContentTypes");
+			}
+        }
 		public void AddReference(string path)
 		{
 			if (path == SourceFsPath)
