@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
+﻿using Microsoft.AspNetCore.Mvc.ActionConstraints;
+using Microsoft.AspNetCore.Server.Kestrel.Core.Internal.Http;
 using Microsoft.Win32;
 using Newtonsoft.Json.Linq;
 using SenseNet.Client;
@@ -267,7 +268,7 @@ namespace SnLiveExportImport
                 writer.WriteEndElement();
                 writer.WriteStartElement("Permissions");
                 writer.WriteElementString("Clear", null);
-                //content.ContentHandler.Security.ExportPermissions(writer);
+                ExportPermissions(contentPath, writer);
                 writer.WriteEndElement();
                 writer.WriteEndElement();
             }
@@ -320,7 +321,7 @@ namespace SnLiveExportImport
                 writer.WriteEndElement();
                 writer.WriteStartElement("Permissions");
                 writer.WriteElementString("Clear", null);
-                //content.ContentHandler.Security.ExportPermissions(writer);
+                ExportPermissions(contentPath, writer);
                 writer.WriteEndElement();
                 writer.WriteEndElement();
             }
@@ -734,6 +735,44 @@ namespace SnLiveExportImport
                             break;
                     }
                 }
+            }
+        }
+
+        public static void ExportPermissions(string contentPath, XmlWriter writer)
+        {
+            var permissionsRequest = new ODataRequest() { Path = contentPath, ActionName = "GetAcl", Metadata = MetadataFormat.None };
+            var permissionsResult = RESTCaller.GetResponseStringAsync(permissionsRequest).GetAwaiter().GetResult();
+            JObject acl = Newtonsoft.Json.JsonConvert.DeserializeObject(permissionsResult) as JObject;
+
+            bool isInherits = false;
+            if (bool.TryParse(acl["inherits"]?.ToString(), out isInherits) && !isInherits)
+                writer.WriteElementString("Break", null);
+            var entries = acl["entries"] as JArray;
+            foreach (JObject aceInfo in entries)
+                ExportPermission(aceInfo, writer);
+        }
+
+        public static void ExportPermission(JObject aceInfo, XmlWriter writer)
+        {
+            bool isInherited = false;
+            if (bool.TryParse(aceInfo["inherited"]?.ToString(), out isInherited) && !isInherited)
+            {
+                writer.WriteStartElement("Identity");
+                writer.WriteAttributeString("path", aceInfo["identity"]?["path"]?.ToString());
+                //if (aceInfo.LocalOnly)
+                //    writer.WriteAttributeString("propagation", "LocalOnly");
+                var permissions = aceInfo["permissions"] as JObject;
+                foreach (var permission in permissions.Properties())
+                {
+                    var permTypeName = permission.Name;
+                    var permTypeValueObj = permission.Value as JObject;
+                    if (permTypeValueObj != null) {
+                        var permTypeValue = permTypeValueObj["value"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(permTypeValue))
+                            writer.WriteElementString(permTypeName, permTypeValue);
+                    }
+                }
+                writer.WriteEndElement();
             }
         }
 
