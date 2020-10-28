@@ -28,7 +28,12 @@ namespace SnLiveExportImport
             string fsTargetRepoPath = $".{targetRepoPath}";
             string cbPath = (syncmode) ? Path.Combine(sourceBasePath, fsTargetRepoPath) : sourceBasePath;
             string fsPath = Path.GetFullPath(cbPath);
-            
+
+            // content type folder expected
+            string ctPath = Path.Combine(cbPath, "System/Schema/ContentTypes");
+            string fsCtPath = Path.GetFullPath(ctPath);
+            ImportContentTypeDefinitionsAndAspects(fsCtPath, null);
+
             Log.Information($"target parent path: {targetRepoParentPath}");
             Log.Information($"target repo path: {targetRepoPath}");
             Log.Information($"source path: {sourceBasePath}");
@@ -50,7 +55,7 @@ namespace SnLiveExportImport
 
             if (!string.IsNullOrWhiteSpace(targetRepoPath))
             {
-                var isTargetExists = Content.ExistsAsync(targetRepoParentPath).GetAwaiter().GetResult();
+                var isTargetExists = Content.ExistsAsync(targetRepoPath).GetAwaiter().GetResult();
                 if (!isTargetExists)
                 {
                     Log.Warning($"Target container was not found: {targetRepoPath}");
@@ -61,6 +66,79 @@ namespace SnLiveExportImport
             //SenseNet.Client.Importer.ImportAsync(fsPath, targetRepoPath).GetAwaiter().GetResult();
 
             ImportContents(fsPath, targetRepoPath, validate);
+        }
+
+        public static void ImportContentTypeDefinitionsAndAspects(string ctdPath, string aspectsPath)
+        {
+            if (ctdPath != null && Directory.Exists(ctdPath))
+            {
+                Log.Information($"Importing content types: {ctdPath}");
+
+                //ContentTypeInstaller importer = ContentTypeInstaller.CreateBatchContentTypeInstaller();
+                var ctdFiles = Directory.GetFiles(ctdPath, "*.xml");
+                foreach (var ctdFilePath in ctdFiles)
+                {
+
+                    var ctdName = Path.GetFileNameWithoutExtension(ctdFilePath);
+                    
+                    // workaround, name should get from xml
+                    if (ctdName.EndsWith("Ctd"))
+                    {
+                        var lastCtdPos = ctdName.LastIndexOf("Ctd");
+                        ctdName = ctdName.Substring(0, lastCtdPos);
+                    }
+
+                    using (var fStream = new FileStream(ctdFilePath, FileMode.Open, FileAccess.Read))
+                    {
+                        try
+                        {
+                            Log.Information($"  {Path.GetFileName(ctdFilePath)}");
+                            //importer.AddContentType(stream);
+                            var ctdContent = Content.UploadAsync("/Root/System/Schema/ContentTypes/GenericContent", ctdName, fStream, "ContentType").GetAwaiter().GetResult();
+                        }
+                        catch (ApplicationException e)
+                        {
+                            //Logger.Errors++;
+                            Log.Error($"  SKIPPED: {e.Message}");
+                        }
+                    }
+                }
+                Log.Information($"  {ctdFiles.Length} file loaded...");
+
+                //using (CreateProgressBar())
+                //    importer.ExecuteBatch();
+
+                Log.Information($"  {ctdFiles.Length} CTD imported.");
+                Log.Information("Ok");
+            }
+            else
+            {
+                Log.Information("CTDs not changed");
+            }
+
+            // ==============================================================
+
+            if (aspectsPath != null && Directory.Exists(aspectsPath))
+            {
+                //if (!Node.Exists(Repository.AspectsFolderPath))
+                //{
+                //    Log(ImportLogLevel.Info, "Creating aspect container (" + Repository.AspectsFolderPath + ")...");
+                //    Content.CreateNew(typeof(SystemFolder).Name, Repository.SchemaFolder, "Aspects").Save();
+                //    Log(ImportLogLevel.Info, "  Ok");
+                //}
+
+                //var aspectFiles = System.IO.Directory.GetFiles(aspectsPath, "*.content");
+                //Log(ImportLogLevel.Info, "Importing aspects:");
+
+                //ImportContents(aspectsPath, Repository.AspectsFolderPath, true, false);
+
+                //Log(ImportLogLevel.Info, "  " + aspectFiles.Length + " aspect" + (aspectFiles.Length > 1 ? "s" : "") + " imported.");
+                //Log(ImportLogLevel.Progress, "Ok");
+            }
+            else
+            {
+                Log.Information("Aspects not changed.");
+            }
         }
 
         private static void ImportContents(string srcPath, string targetPath, bool validate)
