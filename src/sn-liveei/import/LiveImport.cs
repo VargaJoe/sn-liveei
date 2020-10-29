@@ -80,8 +80,9 @@ namespace SnLiveExportImport
                 {
 
                     var ctdName = Path.GetFileNameWithoutExtension(ctdFilePath);
-                    
-                    // workaround, name should get from xml
+
+                    // workaround, name should get from xml 
+                    // TODO: recursive import ctds with existing parents 
                     if (ctdName.EndsWith("Ctd"))
                     {
                         var lastCtdPos = ctdName.LastIndexOf("Ctd");
@@ -323,7 +324,7 @@ namespace SnLiveExportImport
                             TreeWalker(contentInfo.ChildrenFolder, false, content.Path, indent + "  ", postponedList, validate);
                     }
                 }
-                Thread.Sleep(500);
+                Thread.Sleep(100);
             }
         }
 
