@@ -249,6 +249,12 @@ namespace SnLiveExportImport
                     }
                 }
 
+                if (contentInfo.ContentTypeName == "ContentType")
+                {
+                    Log.Warning($"ContentType import is not allowed outside Schema folder, check your settings or import package! Skipped: {contentInfo.MetaDataPath}, {parentPath}");
+                    continue;
+                }
+
                 bool isNewContent = true;
                 Content content = null;
                 try
