@@ -575,7 +575,7 @@ namespace SnLiveExportImport
                 {
                     // not all fields can be fount on given contenttype
                     var contentField = ContentFields.FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
-                    var contentFieldOwn = contentTypeFromSchema["FieldSettings"].FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
+                    var contentFieldOwn = contentTypeFromSchema?["FieldSettings"].FirstOrDefault(cf => cf["Name"]?.ToString() == fieldName);
 
                     if (contentField == null)
                         continue;
