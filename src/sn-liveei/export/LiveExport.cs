@@ -434,23 +434,38 @@ namespace SnLiveExportImport
                                 {
                                     // multiple references
                                     var refResults = ((JObject)refResponse)["d"]["results"] as JArray;
-                                    foreach (var refField in refResults)
+                                    if (fieldType == "Reference")
                                     {
-                                        writer.WriteStartElement("Path");
-                                        writer.WriteString((refField as JObject)?["Path"]?.ToString());
-                                        writer.WriteEndElement();
+                                        foreach (var refField in refResults)
+                                        {
+                                            writer.WriteStartElement("Path");
+                                            writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                            writer.WriteEndElement();
+                                        }
+                                    }
+                                    else if (fieldType == "AllowedChildTypes")
+                                    {
+                                        writer.WriteString(string.Join(" ", (refResults as JArray).Select(f => ((JObject)f)?["Name"]?.ToString())));
                                     }
                                 }
                                 else
                                 {
                                     // only single reference
-                                    writer.WriteStartElement("Path");
-                                    writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
-                                    writer.WriteEndElement();
+                                    if (fieldType == "Reference")
+                                    {
+                                        writer.WriteStartElement("Path");
+                                        writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
+                                        writer.WriteEndElement();
+                                    }
+                                    else if (fieldType == "AllowedChildTypes")
+                                    {
+                                        writer.WriteString((refResponse as JObject)?["d"]?["Name"]?.ToString());
+                                    }
                                 }
                                 writer.WriteEndElement();
                             }
                             break;
+                        case "Boolean":
                         case "ShortText":
                         case "LongText":
                         case "Integer":
@@ -584,7 +599,11 @@ namespace SnLiveExportImport
                     if (contentFieldOwn != null && bool.TryParse(contentFieldOwn["ReadOnly"]?.ToString(), out bool readOnly) && readOnly)
                         continue;
 
-                    var fieldType = contentField["Type"]?.ToString().Replace("FieldSetting", "");
+                    //var fieldType = contentField["Type"]?.ToString().Replace("FieldSetting", "");
+                    var fieldClassType = contentField["FieldClassName"]?.ToString();
+                    var lastPointPos = fieldClassType.LastIndexOf(".");
+                    var lastFieldPos = fieldClassType.LastIndexOf("Field");
+                    var fieldType = fieldClassType.Substring(lastPointPos + 1).Substring(0, lastFieldPos - lastPointPos - 1);
                     if (string.IsNullOrWhiteSpace(fieldType))
                         continue;
 
@@ -615,6 +634,7 @@ namespace SnLiveExportImport
                                 writer.WriteEndElement();
                             }
                             break;
+                        case "AllowedChildTypes":
                         case "Reference":
                             if (fieldValue["__deferred"] == null)
                                 continue;
@@ -641,23 +661,38 @@ namespace SnLiveExportImport
                                 {
                                     // multiple references
                                     var refResults = ((JObject)refResponse)["d"]["results"] as JArray;
-                                    foreach (var refField in refResults)
+                                    if (fieldType == "Reference")
                                     {
-                                        writer.WriteStartElement("Path");
-                                        writer.WriteString((refField as JObject)?["Path"]?.ToString());
-                                        writer.WriteEndElement();
+                                        foreach (var refField in refResults)
+                                        {
+                                            writer.WriteStartElement("Path");
+                                            writer.WriteString((refField as JObject)?["Path"]?.ToString());
+                                            writer.WriteEndElement();
+                                        }
+                                    }
+                                    else if (fieldType == "AllowedChildTypes")
+                                    {
+                                        writer.WriteString(string.Join(" ", (refResults as JArray).Select(f => ((JObject)f)?["Name"]?.ToString())));
                                     }
                                 }
                                 else
                                 {
                                     // only single reference
-                                    writer.WriteStartElement("Path");
-                                    writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
-                                    writer.WriteEndElement();
+                                    if (fieldType == "Reference")
+                                    {
+                                        writer.WriteStartElement("Path");
+                                        writer.WriteString((refResponse as JObject)?["d"]?["Path"]?.ToString());
+                                        writer.WriteEndElement();
+                                    }
+                                    else if (fieldType == "AllowedChildTypes")
+                                    {
+                                        writer.WriteString((refResponse as JObject)?["d"]?["Name"]?.ToString());
+                                    }
                                 }
                                 writer.WriteEndElement();
                             }
                             break;
+                        case "Boolean":
                         case "ShortText":
                         case "LongText":
                         case "Integer":
