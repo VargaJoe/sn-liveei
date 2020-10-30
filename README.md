@@ -11,6 +11,6 @@ experimental
   - false: relative path will be mapped on file system, e.g.: ./exportfolder/ExportedContent
 - tree: true or false
   - true: given content and all subcontent will be exported
-  - false: onlz given content will be exported
+  - false: only given content will be exported
 - continuefrom: repository path
   - if given, import (will) continues from given content, previous contents will be skipped (but their references)
