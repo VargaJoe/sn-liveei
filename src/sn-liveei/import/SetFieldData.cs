@@ -78,7 +78,8 @@ namespace SnLiveExportImport
                         string[] notAllowedToModify = { "SystemFolder" };
                         if (!notAllowedToModify.Any(x => x == context.ContentType))
                         {
-                            content[fieldName] = fieldNode.InnerText.Split(", ");
+                            // TODO: this not works, how we can send allowedchildtypes
+                            content[fieldName] = fieldNode.InnerText.Split(new char[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
                             isModified = true;
                         }
                     }
@@ -99,8 +100,11 @@ namespace SnLiveExportImport
                                 string filePath = Path.Combine(context.CurrentDirectory, attachment);
                                 using (FileStream fs = File.OpenRead(filePath))
                                 {
-                                    content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
-                                    Log.Information($"Upload at SetFieldData: {content.Name}");
+                                    if (fs.Length > 0)
+                                    {
+                                        content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+                                        Log.Information($"Upload at SetFieldData: {content.Name}");
+                                    }
                                 }
                             }
                             catch (Exception ex)
