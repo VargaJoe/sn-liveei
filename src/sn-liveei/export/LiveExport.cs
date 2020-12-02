@@ -44,7 +44,7 @@ namespace SnLiveExportImport
             //string combino = Path.Combine(targetBasePath, fsTargetRepoPath);
             //string cbPath = (syncmode) ? targetBasePath : $"{targetBasePath}{DateTime.Now.Ticks}";
             string fsSourceRepoParentPath = $".{sourceRepoParentPath}";
-            string cbPath = (syncmode) ? Path.Combine(targetBasePath, fsSourceRepoParentPath) : $"{targetBasePath}{DateTime.Now.Ticks}";
+            string cbPath = (syncmode) ? Path.Combine(targetBasePath, fsSourceRepoParentPath) : $"{targetBasePath}-{DateTime.Now.ToString("yyyyMMdd-HHmmss")}";
             string fsPath = Path.GetFullPath(cbPath);
 
             ExportContents(sourceRepoPath, fsPath, all);

@@ -104,6 +104,7 @@ namespace SnLiveExportImport
                                     {
                                         content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
                                         Log.Information($"Upload at SetFieldData: {content.Name}");
+                                        Thread.Sleep(100);
                                     }
                                 }
                             }
