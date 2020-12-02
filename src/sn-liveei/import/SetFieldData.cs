@@ -120,18 +120,7 @@ namespace SnLiveExportImport
                         // Simple types (Name, DisplayName, Body, Int, Date, single Reference) all works with innertext
                         if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
                         {                            
-                            if (fieldNode.InnerText.Contains("="))                            
-                            {
-                                // temporary workaround as equal sign throws error
-                                // it brokes the value so beware!
-                                content[fieldName] = fieldNode.InnerText.Replace("=", ":");
-                                Log.Warning($"Illegal (=) character stripped from value: {fieldName}");
-                            }
-                            else
-                            {
-                                content[fieldName] = fieldNode.InnerText;
-                            }
-                            
+                            content[fieldName] = fieldNode.InnerText;
                             isModified = true;
                         }
                     }
