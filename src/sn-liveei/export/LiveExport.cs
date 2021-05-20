@@ -230,7 +230,7 @@ namespace SnLiveExportImport
 
             if (contentType == "ContentType")
             {
-                Log.Information($"{contentPath} (TODO)");
+                Log.Information($"{contentPath}");
 
                 ExportContentType(content.Name, content["Type"]?.ToString(), context);
                 return;
@@ -277,7 +277,7 @@ namespace SnLiveExportImport
 
             if (contentType == "ContentType")
             {
-                Log.Information($"{contentPath} (TODO)");
+                Log.Information($"{contentPath}");
 
                 ExportContentType(content["Name"]?.ToString(), content["Type"]?.ToString(), context);
                 return;
@@ -829,7 +829,7 @@ namespace SnLiveExportImport
             var fileName = contentName + "Ctd.xml";
             //var fsPath = Path.Combine(context.ContentTypeDirectory, fileName);
             var fsPath = Path.Combine(context.ContentTypeDirectory, fileName);
-            var ctdString = GetCtdXml(contentType);
+            var ctdString = GetCtdXml(contentName);
 
             using (FileStream target = new FileStream(fsPath, FileMode.Create))
             {
