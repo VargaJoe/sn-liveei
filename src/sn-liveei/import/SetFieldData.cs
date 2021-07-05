@@ -31,6 +31,9 @@ namespace SnLiveExportImport
                 if (fieldName == "Aspects")
                     continue;
 
+                if (context.ContentType == "Folder" && fieldName == "AllowedChildTypes")
+                    continue;
+
                 // TODO: special types wont work for now
                 if (Program._appConfig.ExcludedImportFields.Any(x => x == fieldName))
                     continue;
@@ -103,8 +106,8 @@ namespace SnLiveExportImport
                                     if (fs.Length > 0)
                                     {
                                         content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+                                        Thread.Sleep(1000);
                                         Log.Information($"Upload at SetFieldData: {content.Name}");
-                                        Thread.Sleep(100);
                                     }
                                 }
                             }
