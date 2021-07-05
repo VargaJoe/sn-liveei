@@ -95,7 +95,7 @@ namespace SnLiveExportImport
                         {
                             Log.Information($"  {Path.GetFileName(ctdFilePath)}");
                             //importer.AddContentType(stream);
-                            var ctdContent = Content.UploadAsync("/Root/System/Schema/ContentTypes/GenericContent", ctdName, fStream, "ContentType").GetAwaiter().GetResult();
+                            var ctdContent = Content.UploadAsync("/Root/System/Schema/ContentTypes", ctdName, fStream, "ContentType").GetAwaiter().GetResult();
                         }
                         catch (ApplicationException e)
                         {
@@ -301,7 +301,7 @@ namespace SnLiveExportImport
                         Thread.Sleep(1000);
                         continue;
                     }
-
+                    
                     // gather security change iformation
                     if (contentInfo.ClearPermissions)
                     {
@@ -352,6 +352,7 @@ namespace SnLiveExportImport
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
                         content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
+                        Thread.Sleep(1000);
                         isNewContent = true;
                     }
                 }
