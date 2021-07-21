@@ -106,7 +106,7 @@ namespace SnLiveExportImport
                                     if (fs.Length > 0)
                                     {
                                         content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
-                                        Thread.Sleep(1000);
+                                        Thread.Sleep(100);
                                         Log.Information($"Upload at SetFieldData: {content.Name}");
                                     }
                                 }
@@ -114,7 +114,7 @@ namespace SnLiveExportImport
                             catch (Exception ex)
                             {
                                 Log.Error($"Error at binary update: {content.Name}, {attachment}, {ex.Message}, {ex.InnerException?.Message}");
-                                Thread.Sleep(1000);
+                                //Thread.Sleep(1000);
                             }
                         }
                     }

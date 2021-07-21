@@ -96,6 +96,7 @@ namespace SnLiveExportImport
                             Log.Information($"  {Path.GetFileName(ctdFilePath)}");
                             //importer.AddContentType(stream);
                             var ctdContent = Content.UploadAsync("/Root/System/Schema/ContentTypes", ctdName, fStream, "ContentType").GetAwaiter().GetResult();
+                            Thread.Sleep(100);
                         }
                         catch (ApplicationException e)
                         {
@@ -181,7 +182,7 @@ namespace SnLiveExportImport
             catch (Exception e)
             {
                 PrintException(e, null);
-                Thread.Sleep(1000);
+                //Thread.Sleep(1000);
             }
 
             Log.Information("========================================");
@@ -264,7 +265,7 @@ namespace SnLiveExportImport
                 catch (Exception ex)
                 {
                     Log.Error($"Exception on Load/Create, content: {contentInfo.MetaDataPath}, {ex.Message}, {ex.InnerException?.Message}");
-                    Thread.Sleep(1000);
+                    //Thread.Sleep(1000);
                     continue;
                 }
 
@@ -298,7 +299,7 @@ namespace SnLiveExportImport
                     catch (Exception e)
                     {
                         Log.Error($"Error at SetMetaData: {contentInfo.MetaDataPath}, {e.Message} {e.InnerException?.Message}");
-                        Thread.Sleep(1000);
+                        //Thread.Sleep(1000);
                         continue;
                     }
                     
@@ -330,7 +331,7 @@ namespace SnLiveExportImport
                             TreeWalker(contentInfo.ChildrenFolder, false, content.Path, indent + "  ", postponedList, validate);
                     }
                 }
-                Thread.Sleep(100);
+                //Thread.Sleep(100);
             }
         }
 
@@ -352,7 +353,7 @@ namespace SnLiveExportImport
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
                         content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
-                        Thread.Sleep(1000);
+                        Thread.Sleep(100);
                         isNewContent = true;
                     }
                 }
@@ -399,12 +400,13 @@ namespace SnLiveExportImport
                     if (contentInfo.UpdateReferences(content, validate))
                     {
                         content.SaveAsync().GetAwaiter().GetResult();
+                        Thread.Sleep(100);
                     }
                 }
                 catch (Exception e)
                 {
                     PrintException(e, contentInfo.MetaDataPath);
-                    Thread.Sleep(1000);
+                    //Thread.Sleep(1000);
                 }
             }
             else

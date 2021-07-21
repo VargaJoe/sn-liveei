@@ -468,6 +468,7 @@ namespace SnLiveExportImport
                         case "Boolean":
                         case "ShortText":
                         case "LongText":
+                        case "RichText":
                         case "Integer":
                         case "Number":
                         case "Null":
@@ -695,6 +696,7 @@ namespace SnLiveExportImport
                         case "Boolean":
                         case "ShortText":
                         case "LongText":
+                        case "RichText":
                         case "Integer":
                         case "Number":
                         case "Null":

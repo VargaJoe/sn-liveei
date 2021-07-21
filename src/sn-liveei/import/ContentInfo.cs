@@ -200,6 +200,7 @@ namespace SnLiveExportImport.ContentImporter
             if ((isNewContent && !Program._appConfig.FileTypes.Any(f => f == cType)) || result)
             {
                 content.SaveAsync().GetAwaiter().GetResult();
+                Thread.Sleep(100);
                 _contentId = content.Id;
 
                 if (content.Id == 0)
