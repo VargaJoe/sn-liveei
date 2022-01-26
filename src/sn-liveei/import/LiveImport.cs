@@ -352,7 +352,8 @@ namespace SnLiveExportImport
                 }
                 else
                 {
-                    using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
+                    string filePath = contentInfo.Attachments.Count > 0 ? Path.Combine(Path.GetDirectoryName(contentInfo.MetaDataPath), contentInfo.Attachments[0]) : contentInfo.MetaDataPath;
+                    using (FileStream fs = File.OpenRead(filePath))
                     {
                         Thread.Sleep(1000);
                         content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
