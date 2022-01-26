@@ -95,8 +95,9 @@ namespace SnLiveExportImport
                         {
                             Log.Information($"  {Path.GetFileName(ctdFilePath)}");
                             //importer.AddContentType(stream);
+                            Thread.Sleep(1000);
                             var ctdContent = Content.UploadAsync("/Root/System/Schema/ContentTypes", ctdName, fStream, "ContentType").GetAwaiter().GetResult();
-                            Thread.Sleep(100);
+                            //Thread.Sleep(100);
                         }
                         catch (ApplicationException e)
                         {
@@ -286,6 +287,7 @@ namespace SnLiveExportImport
                     //-- SetMetadata without references. Return if the setting is false or exception was thrown.
                     try
                     {
+                        Thread.Sleep(500);
                         var setResult = contentInfo.SetMetadata(content, currentDir, isNewContent, validate, false);
 
                         // strange error
@@ -352,8 +354,9 @@ namespace SnLiveExportImport
                 {
                     using (FileStream fs = File.OpenRead(contentInfo.MetaDataPath))
                     {
+                        Thread.Sleep(1000);
                         content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
-                        Thread.Sleep(100);
+                        //Thread.Sleep(100);
                         isNewContent = true;
                     }
                 }
