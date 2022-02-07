@@ -100,12 +100,13 @@ namespace SnLiveExportImport
                         {
                             try
                             {
+                                string cntType = content["Type"].ToString();
                                 string filePath = Path.Combine(context.CurrentDirectory, attachment);
                                 using (FileStream fs = File.OpenRead(filePath))
                                 {
                                     if (fs.Length > 0)
                                     {
-                                        content = Content.UploadAsync(content.ParentPath, content.Name, fs, null, fieldName).GetAwaiter().GetResult();
+                                        content = Content.UploadAsync(content.ParentPath, content.Name, fs, cntType, fieldName).GetAwaiter().GetResult();
                                         Thread.Sleep(100);
                                         Log.Information($"Upload at SetFieldData: {content.Name}");
                                     }
