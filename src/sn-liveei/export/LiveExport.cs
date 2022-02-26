@@ -26,7 +26,7 @@ namespace SnLiveExportImport
             // prepare ctd info
             ContentTypes = GetCtds();
 
-            ContentTypeContents = Content.QueryAsync("+InTree:'/Root/System/Schema' +Type:ContentType").GetAwaiter().GetResult().ToList();
+            ContentTypeContents = Content.QueryAsync("+InTree:'/Root/System/Schema' +Type:ContentType .AUTOFILTERS:OFF").GetAwaiter().GetResult().ToList();
 
             // prepare field info
             ContentFields = GetFields(ContentTypes);
