@@ -143,7 +143,10 @@ namespace SnLiveExportImport
                     {
                         if (!string.IsNullOrWhiteSpace(fieldNode.InnerText))
                         {
-                            content[fieldName] = fieldNode.InnerText;
+                            //content[fieldName] = fieldNode.InnerText;
+                            //content[fieldName] = new string[] { fieldNode.InnerText };
+                            //content[fieldName] = new Newtonsoft.Json.Linq.JArray(new string[] { fieldNode.InnerText });
+                            content[fieldName] = new[] { fieldNode.InnerText };
                             isModified = true;
                         }
                     } 
@@ -155,7 +158,8 @@ namespace SnLiveExportImport
                         {
                             paths.Add(pathNode.InnerText.Trim());
                         }
-                        content[fieldName] = $"[{string.Join(",",paths)}]";
+                        //content[fieldName] = $"['{string.Join("','",paths)}']";
+                        content[fieldName] = paths.ToArray();
                         isModified = true;
                     } 
                 }
