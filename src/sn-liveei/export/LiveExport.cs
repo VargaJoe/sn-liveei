@@ -514,7 +514,7 @@ namespace SnLiveExportImport
                                     ext = GetDefaultExtension(magic);
 
                                     if (string.IsNullOrWhiteSpace(ext) && fieldName == "ImageData")
-                                        ext = "jpg";
+                                        ext = ".jpg";
 
                                     fileName += "." + fieldName + ext;
                                 }
@@ -742,7 +742,7 @@ namespace SnLiveExportImport
                                         ext = GetDefaultExtension(magic);
 
                                         if (string.IsNullOrWhiteSpace(ext) && fieldName == "ImageData")
-                                            ext = "jpg";
+                                            ext = ".jpg";
 
                                         fileName += "." + fieldName + ext;
                                     }
