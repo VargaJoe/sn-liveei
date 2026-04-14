@@ -13,6 +13,8 @@ using System.Xml;
 
 namespace SnLiveExportImport
 {
+    using IOFile = System.IO.File;
+
     public static class ContentMetaData
     {
         public static bool SetFields(Content content, ImportContext context)
@@ -102,7 +104,7 @@ namespace SnLiveExportImport
                             {
                                 string cntType = content["Type"].ToString();
                                 string filePath = Path.Combine(context.CurrentDirectory, attachment);
-                                using (FileStream fs = File.OpenRead(filePath))
+                                using (FileStream fs = IOFile.OpenRead(filePath))
                                 {
                                     if (fs.Length > 0)
                                     {

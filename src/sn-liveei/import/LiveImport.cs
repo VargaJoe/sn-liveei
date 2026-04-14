@@ -10,6 +10,8 @@ using System.Threading;
 
 namespace SnLiveExportImport
 {
+    using IOFile = System.IO.File;
+
     public static class LiveImport
     {
         public static void ImportContent()
@@ -41,7 +43,7 @@ namespace SnLiveExportImport
             Log.Information($"combined path: {cbPath}");
             Log.Information($"filesystem path: {fsPath}");
 
-            if (syncmode && File.Exists(fsPath + ".Content"))
+            if (syncmode && IOFile.Exists(fsPath + ".Content"))
             {
                 Log.Information($"file exists: {fsPath}.Content");
 
@@ -147,7 +149,7 @@ namespace SnLiveExportImport
         private static void ImportContents(string srcPath, string targetPath, bool validate)
         {
             bool pathIsFile = false;
-            if (File.Exists(srcPath))
+            if (IOFile.Exists(srcPath))
             {
                 pathIsFile = true;
             }
@@ -353,7 +355,7 @@ namespace SnLiveExportImport
                 else
                 {
                     string filePath = contentInfo.Attachments.Count > 0 ? Path.Combine(Path.GetDirectoryName(contentInfo.MetaDataPath), contentInfo.Attachments[0]) : contentInfo.MetaDataPath;
-                    using (FileStream fs = File.OpenRead(filePath))
+                    using (FileStream fs = IOFile.OpenRead(filePath))
                     {
                         Thread.Sleep(1000);
                         content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
@@ -434,7 +436,7 @@ namespace SnLiveExportImport
         private static void CreateRefLog(bool createNew)
         {
             _refLogFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "import.reflog");
-            if (!File.Exists(_refLogFilePath) || createNew)
+            if (!IOFile.Exists(_refLogFilePath) || createNew)
             {
                 using (FileStream fs = new FileStream(_refLogFilePath, FileMode.Create))
                 {

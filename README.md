@@ -1,6 +1,11 @@
 # sn-liveei
 experimental
 
+## authentication
+- The tool now authenticates with sensenet API keys.
+- Configure `sensenet:Authentication:ApiKey` in `src/sn-liveei/appsettings.json` (or via environment variable).
+- Legacy top-level `ApiSecretToken` is still accepted as a fallback config key.
+
 
 # settings
 - execution mode: export or import

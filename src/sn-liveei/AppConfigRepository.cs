@@ -1,10 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using SenseNet.Client;
-using System.Net.Http;
+using System;
 using System.Threading.Tasks;
-using IdentityModel.Client;
-using Microsoft.AspNetCore.SignalR;
-using System.Collections.Generic;
 
 namespace SnLiveExportImport
 {
@@ -15,6 +12,7 @@ namespace SnLiveExportImport
         public string BaseURL { get; set; }
         public string ClientId { get; set; }
         public string ClientSecret { get; set; }
+        public string ApiKey { get; set; }
         public string Scope { get; set; }
         public string ApiSecretToken { get; set; }
         public bool RequireHttpsMetadata { get; set; }
@@ -45,6 +43,10 @@ namespace SnLiveExportImport
         private void Initalize()
         {
             this.ApiSecretToken = _config["ApiSecretToken"];
+            this.ApiKey = _config["sensenet:Authentication:ApiKey"];
+            if (string.IsNullOrWhiteSpace(this.ApiKey))
+                this.ApiKey = this.ApiSecretToken;
+
             this.AuthURL = _config["sensenet:Authentication:Authority"];
             this.BaseURL = _config["sensenet:RepositoryUrl"];
             this.ClientId = _config["sensenet:Authentication:ClientId"];
@@ -73,46 +75,22 @@ namespace SnLiveExportImport
             }
         }
 
-        private async Task AppLogin()
+        private Task AppLogin()
         {
             var server = new ServerContext()
             {
-                Url = _config["sensenet:RepositoryUrl"]
+                Url = this.BaseURL
             };
 
-            server.Authentication.AccessToken = await GetTokenAsync(_config);
+            if (string.IsNullOrWhiteSpace(this.ApiKey))
+                throw new InvalidOperationException("Missing authentication configuration. Set sensenet:Authentication:ApiKey (or legacy ApiSecretToken) in appsettings/environment variables.");
+
+            server.Authentication.ApiKey = this.ApiKey;
 
             ClientContext.Current.ChunkSizeInBytes = 512000;
             ClientContext.Current.AddServer(server);
-        }
 
-        private async Task<string> GetTokenAsync(IConfiguration config)
-        {
-            var authority = config["sensenet:Authentication:Authority"];
-
-            var client = new HttpClient();
-            var disco = await client.GetDiscoveryDocumentAsync(authority);
-            if (disco.IsError)
-            {
-                return string.Empty;
-            }
-
-            // request token
-            var tokenResponse = await client.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
-            {
-                Address = disco.TokenEndpoint,
-
-                ClientId = config["sensenet:Authentication:ClientId"],
-                ClientSecret = config["sensenet:Authentication:ClientSecret"],
-                Scope = config["sensenet:Authentication:Scope"]
-            });
-
-            if (tokenResponse.IsError)
-            {
-                return string.Empty;
-            }
-
-            return tokenResponse.AccessToken;
+            return Task.CompletedTask;
         }
     }
 }
