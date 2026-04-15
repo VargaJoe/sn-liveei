@@ -37,7 +37,7 @@ namespace SnLiveExportImport
                     continue;
 
                 // TODO: special types wont work for now
-                if (Program._appConfig.ExcludedImportFields.Any(x => x == fieldName))
+                if (Program._appConfig.ExcludedImportFields.Any(x => string.Equals(x, fieldName, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
                 // TODO: check if xmlnodelist is only available with reference field or should filter for Path nodes
@@ -47,8 +47,27 @@ namespace SnLiveExportImport
                 string[] arrayTypes = { "MemoType", "EventType", "Priority", "Status" };
                 if (!context.UpdateReferences)
                 {
+                    // Password field: extract Text or Hash value from child nodes.
+                    // Sending as plain string routes through field.SetData() on the server (JValue path),
+                    // which properly marks the field as changed. Sending as JObject bypasses SetData
+                    // (uses user.Password directly + continue) and validation fails because
+                    // PasswordField.GetData() returns null outside WorkingMode.Importing.
+                    if (string.Equals(fieldName, "Password", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var textNode = fieldNode.SelectSingleNode("Text");
+                        var hashNode = fieldNode.SelectSingleNode("Hash");
+                        string passwordValue = textNode?.InnerText ?? hashNode?.InnerText;
+
+                        Log.Debug($"Password field detected for {content.Name}: XML=<{fieldNode.InnerXml}>, value={passwordValue?.Substring(0, Math.Min(passwordValue?.Length ?? 0, 6))}...");
+
+                        if (!string.IsNullOrWhiteSpace(passwordValue))
+                        {
+                            content[fieldName] = passwordValue;
+                            isModified = true;
+                        }
+                    }
                     // reference field (I hope)
-                    if (pathNodeList.Count > 0) //if (fieldNode.InnerXml.StartsWith("<Path>"))
+                    else if (pathNodeList.Count > 0) //if (fieldNode.InnerXml.StartsWith("<Path>"))
                     {
                         // some reference field must be set at first run
                         if (setFirstTime.Any(x => x == fieldName))
@@ -108,7 +127,25 @@ namespace SnLiveExportImport
                                 {
                                     if (fs.Length > 0)
                                     {
-                                        content = Content.UploadAsync(content.ParentPath, content.Name, fs, cntType, fieldName).GetAwaiter().GetResult();
+                                        var repository = content.Repository ?? throw new InvalidOperationException("Repository access is not available during binary upload.");
+
+                                        var uploadResult = repository.UploadAsync(new UploadRequest
+                                        {
+                                            ParentPath = content.ParentPath,
+                                            ContentName = content.Name,
+                                            ContentType = cntType,
+                                            PropertyName = fieldName,
+                                            FileName = content.Name
+                                        }, fs, CancellationToken.None).GetAwaiter().GetResult();
+
+                                        if (uploadResult != null)
+                                        {
+                                            if (uploadResult.Id > 0)
+                                                content = repository.LoadContentAsync(uploadResult.Id, CancellationToken.None).GetAwaiter().GetResult();
+                                            else if (!string.IsNullOrWhiteSpace(uploadResult.Url))
+                                                content = repository.LoadContentAsync(uploadResult.Url, CancellationToken.None).GetAwaiter().GetResult();
+                                        }
+
                                         Thread.Sleep(100);
                                         Log.Information($"Upload at SetFieldData: {content.Name}");
                                     }

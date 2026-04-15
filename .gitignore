@@ -5,3 +5,4 @@ obj/
 backup/
 
 src/out/
+liveei_log_*.txt

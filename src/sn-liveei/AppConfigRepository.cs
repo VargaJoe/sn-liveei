@@ -1,6 +1,9 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using SenseNet.Client;
+using SenseNet.Extensions.DependencyInjection;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace SnLiveExportImport
@@ -26,9 +29,11 @@ namespace SnLiveExportImport
         public bool SyncMode { get; set; }
         public bool TreeExport { get; set; }
         public string ContinueFrom { get; set; }
+        public string XsltPath { get; set; }
         public string[] FileTypes { get; set; }
         public string[] ExcludedImportFields { get; set; }
         public string[] ExcludedExportFields { get; set; }
+        public IRepository Repository { get; private set; }
 
 
         public AppConfigRepository(IConfiguration config)
@@ -56,6 +61,7 @@ namespace SnLiveExportImport
             this.Mode = _config["sensenet:LiveExportImport:Mode"];
             this.RepoPath = _config["sensenet:LiveExportImport:RepoPath"];
             this.LocalPath = _config["sensenet:LiveExportImport:LocalPath"];
+            this.XsltPath = _config["sensenet:LiveExportImport:XsltPath"];
 
             if (bool.TryParse(_config["sensenet:LiveExportImport:SyncMode"], out bool syncmode))
                 this.SyncMode = syncmode;
@@ -64,7 +70,21 @@ namespace SnLiveExportImport
                 this.TreeExport = all;
 
             this.FileTypes = _config.GetSection("sensenet:LiveExportImport:FileTypes").Get<string[]>();
-            this.ExcludedImportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedImportFields").Get<string[]>();
+            var configuredExcludedImportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedImportFields").Get<string[]>() ?? Array.Empty<string>();
+            var defaultExcludedImportFields = new[]
+            {
+                // Frequently server-managed fields that may cause save/update issues during migration import.
+                "Hidden",
+                "Index",
+                "EnableLifespan",
+                "ValidFrom",
+                "ValidTill"
+            };
+            this.ExcludedImportFields = configuredExcludedImportFields
+                .Concat(defaultExcludedImportFields)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             this.ExcludedExportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedExportFields").Get<string[]>();
             
             var requireHttpsMetadataString = _config["RequireHttpsMetadata"];
@@ -86,6 +106,18 @@ namespace SnLiveExportImport
                 throw new InvalidOperationException("Missing authentication configuration. Set sensenet:Authentication:ApiKey (or legacy ApiSecretToken) in appsettings/environment variables.");
 
             server.Authentication.ApiKey = this.ApiKey;
+
+            // Build a repository instance through the supported DI pipeline.
+            var services = new ServiceCollection();
+            services.AddSenseNetClient()
+                .ConfigureSenseNetRepository(options =>
+                {
+                    options.Url = this.BaseURL;
+                    options.Authentication.ApiKey = this.ApiKey;
+                });
+            var serviceProvider = services.BuildServiceProvider();
+            var repositoryCollection = serviceProvider.GetRequiredService<IRepositoryCollection>();
+            this.Repository = repositoryCollection.GetRepositoryAsync(System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
             ClientContext.Current.ChunkSizeInBytes = 512000;
             ClientContext.Current.AddServer(server);

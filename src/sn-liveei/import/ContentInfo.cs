@@ -12,6 +12,7 @@ using Serilog;
 using SenseNet.Client.Security;
 using System.Threading;
 using System.Linq;
+using System.Xml.Xsl;
 
 namespace SnLiveExportImport.ContentImporter
 {
@@ -27,6 +28,9 @@ namespace SnLiveExportImport.ContentImporter
         private XmlDocument _xmlDoc;
         private string _childrenFolder;
         private ImportContext _transferringContext;
+        private static readonly object _xsltLock = new object();
+        private static XslCompiledTransform _importXslt;
+        private static bool _importXsltInitialized;
 
         public string MetaDataPath
         {
@@ -105,6 +109,7 @@ namespace SnLiveExportImport.ContentImporter
 
                     _xmlDoc = new XmlDocument();
                     _xmlDoc.Load(path);
+                    ApplyConfiguredXslt(_xmlDoc);
 
                     XmlNode nameNode = _xmlDoc.SelectSingleNode("/ContentMetaData/ContentName");
                     _name = nameNode == null ? Path.GetFileNameWithoutExtension(_name) : nameNode.InnerText;
@@ -188,28 +193,242 @@ namespace SnLiveExportImport.ContentImporter
         {
             bool result = false;
             string cType = content["Type"]?.ToString();
-            if (_xmlDoc != null)
+            try
             {
-                cType = _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText;
-                _transferringContext = new ImportContext(
-                    _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), cType, currentDirectory, isNewContent, needToValidate, updateReferences);
-
-                result = ContentMetaData.SetFields(content, _transferringContext);
-            }
-            // only should save if newcontent OR field have changed
-            if ((isNewContent && !Program._appConfig.FileTypes.Any(f => f == cType)) || result)
-            {
-                content.SaveAsync().GetAwaiter().GetResult();
-                Thread.Sleep(100);
-                _contentId = content.Id;
-
-                if (content.Id == 0)
+                if (_xmlDoc != null)
                 {
-                    Log.Error($"Something went wrong! {content?.Name}");
+                    cType = _xmlDoc.SelectSingleNode("/ContentMetaData/ContentType")?.InnerText;
+                    _transferringContext = new ImportContext(
+                        _xmlDoc.SelectNodes("/ContentMetaData/Fields/*"), cType, currentDirectory, isNewContent, needToValidate, updateReferences);
+
+                    result = ContentMetaData.SetFields(content, _transferringContext);
                 }
+
+                // only should save if newcontent OR field have changed
+                if ((isNewContent && !Program._appConfig.FileTypes.Any(f => f == cType)) || result)
+                {
+                    try
+                    {
+                        content.SaveAsync(CancellationToken.None).GetAwaiter().GetResult();
+                    }
+                    catch (Exception ex) when (IsEmptyResponseSaveError(ex))
+                    {
+                        // Some servers return an empty body for successful save operations.
+                        // In that case, try to reload by path and continue.
+                        if (!TryReloadContentAfterEmptyResponse(content))
+                            throw;
+
+                        Log.Warning($"Save returned an empty response, continuing with reloaded content: {content.Path ?? _metaDataPath}");
+                    }
+                    catch (Exception ex) when (IsIgnorableFileSaveError(ex, cType))
+                    {
+                        Log.Warning($"Save failed for file metadata update, continuing import: {content.Path ?? _metaDataPath}. Reason: {ex.Message}");
+                    }
+                    catch (Exception ex) when (IsIgnorableUserPasswordError(ex, cType))
+                    {
+                        Log.Warning($"User save failed (Password field rejected by server), continuing import: {content.Path ?? _metaDataPath}. Server error: {ex.Message}");
+                    }
+
+                    Thread.Sleep(100);
+                    _contentId = content.Id;
+
+                    if (content.Id == 0)
+                    {
+                        Log.Error($"Something went wrong! {content?.Name}");
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex) when (IsIgnorableFileSaveError(ex, cType))
+            {
+                Log.Warning($"Metadata processing failed for file content, continuing import: {content.Path ?? _metaDataPath}. Reason: {ex.Message}");
+                return false;
+            }
+            catch (Exception ex) when (IsIgnorableUserPasswordError(ex, cType))
+            {
+                Log.Warning($"User save failed (Password field rejected by server), continuing import: {content.Path ?? _metaDataPath}. Server error: {ex.Message}");
+                return false;
+            }
+        }
+
+        private static bool IsEmptyResponseSaveError(Exception ex)
+        {
+            while (ex != null)
+            {
+                if (!string.IsNullOrWhiteSpace(ex.Message) && ex.Message.IndexOf("No object can be recognized from the response if it is empty", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+                ex = ex.InnerException;
             }
 
-            return result;
+            return false;
+        }
+
+        private static bool TryReloadContentAfterEmptyResponse(Content content)
+        {
+            var repository = content?.Repository;
+            if (repository == null)
+                return false;
+
+            var fallbackPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (!string.IsNullOrWhiteSpace(content.Path))
+                fallbackPaths.Add(content.Path);
+            if (!string.IsNullOrWhiteSpace(content.ParentPath) && !string.IsNullOrWhiteSpace(content.Name))
+                fallbackPaths.Add(RepositoryPath.Combine(content.ParentPath, content.Name));
+
+            if (fallbackPaths.Count == 0)
+                return false;
+
+            const int maxAttempts = 5;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                foreach (var path in fallbackPaths)
+                {
+                    try
+                    {
+                        var reloaded = repository.LoadContentAsync(path, CancellationToken.None).GetAwaiter().GetResult();
+                        if (reloaded == null)
+                            continue;
+
+                        content.Id = reloaded.Id;
+                        content.Path = reloaded.Path;
+                        content.Name = reloaded.Name;
+                        return true;
+                    }
+                    catch
+                    {
+                        // Retry below: some servers need a short delay before the new/updated content becomes available.
+                    }
+                }
+
+                if (attempt < maxAttempts - 1)
+                    Thread.Sleep(200);
+            }
+
+            return false;
+        }
+
+        private static void ApplyConfiguredXslt(XmlDocument xml)
+        {
+            if (xml == null)
+                return;
+
+            var xslt = GetConfiguredXslt();
+            if (xslt == null)
+            {
+                Log.Debug("No XSLT configured, skipping transform.");
+                return;
+            }
+
+            var beforeFields = xml.SelectSingleNode("/ContentMetaData/Fields")?.InnerXml;
+            Log.Debug($"XSLT transform BEFORE: {beforeFields?.Substring(0, Math.Min(beforeFields?.Length ?? 0, 500))}");
+
+            using var sw = new StringWriter();
+            using (var xw = XmlWriter.Create(sw, xslt.OutputSettings))
+            {
+                using var sr = new StringReader(xml.OuterXml);
+                using var xr = XmlReader.Create(sr);
+                xslt.Transform(xr, null, xw);
+            }
+
+            xml.LoadXml(sw.ToString());
+
+            var afterFields = xml.SelectSingleNode("/ContentMetaData/Fields")?.InnerXml;
+            Log.Debug($"XSLT transform AFTER:  {afterFields?.Substring(0, Math.Min(afterFields?.Length ?? 0, 500))}");
+        }
+
+        private static XslCompiledTransform GetConfiguredXslt()
+        {
+            if (_importXsltInitialized)
+                return _importXslt;
+
+            lock (_xsltLock)
+            {
+                if (_importXsltInitialized)
+                    return _importXslt;
+
+                var configuredPath = Program._appConfig?.XsltPath;
+                if (string.IsNullOrWhiteSpace(configuredPath))
+                {
+                    _importXslt = null;
+                    _importXsltInitialized = true;
+                    return null;
+                }
+
+                var resolvedPath = ResolveXsltPath(configuredPath);
+
+                if (!System.IO.File.Exists(resolvedPath))
+                    throw new FileNotFoundException($"Configured XSLT file was not found: {resolvedPath}");
+
+                var transform = new XslCompiledTransform();
+                transform.Load(resolvedPath, XsltSettings.Default, new XmlUrlResolver());
+                _importXslt = transform;
+                _importXsltInitialized = true;
+
+                Log.Information($"Import XSLT loaded: {resolvedPath}");
+                return _importXslt;
+            }
+        }
+
+        private static string ResolveXsltPath(string configuredPath)
+        {
+            if (Path.IsPathRooted(configuredPath))
+                return configuredPath;
+
+            var candidates = new[]
+            {
+                Path.Combine(Directory.GetCurrentDirectory(), configuredPath),
+                Path.Combine(AppContext.BaseDirectory, configuredPath),
+                Path.Combine(Directory.GetParent(AppContext.BaseDirectory)?.FullName ?? string.Empty, configuredPath)
+            }
+            .Where(p => !string.IsNullOrWhiteSpace(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+            foreach (var candidate in candidates)
+            {
+                if (System.IO.File.Exists(candidate))
+                    return candidate;
+            }
+
+            return candidates.FirstOrDefault() ?? configuredPath;
+        }
+
+        private static bool IsIgnorableFileSaveError(Exception ex, string contentType)
+        {
+            if (string.IsNullOrWhiteSpace(contentType))
+                return false;
+
+            var isFileLike = Program._appConfig.FileTypes?.Any(ft => string.Equals(ft, contentType, StringComparison.OrdinalIgnoreCase)) == true;
+            if (!isFileLike)
+                return false;
+
+            while (ex != null)
+            {
+                if (!string.IsNullOrWhiteSpace(ex.Message) && ex.Message.IndexOf("Object reference not set to an instance of an object", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+                ex = ex.InnerException;
+            }
+
+            return false;
+        }
+
+        private static bool IsIgnorableUserPasswordError(Exception ex, string contentType)
+        {
+            if (!string.Equals(contentType, "User", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            while (ex != null)
+            {
+                if (!string.IsNullOrWhiteSpace(ex.Message) && ex.Message.IndexOf("Invalid Fields: Password", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+
+                ex = ex.InnerException;
+            }
+
+            return false;
         }
 
         public bool UpdateReferences(Content content, bool needToValidate)
@@ -243,11 +462,11 @@ namespace SnLiveExportImport.ContentImporter
             var clearNode = permissionsNode.SelectSingleNode("Clear");
             if (breakNode != null)
             {
-                content.BreakInheritanceAsync();
+                content.BreakInheritanceAsync().GetAwaiter().GetResult();
             }
             else
             {
-                content.UnbreakInheritanceAsync();
+                content.UnbreakInheritanceAsync().GetAwaiter().GetResult();
             }
             // executing 'Clear'
             if (clearNode != null)
@@ -280,7 +499,8 @@ namespace SnLiveExportImport.ContentImporter
                     //    throw ImportPermissionExceptionHelper(String.Concat("Invalid path of the Identity element ", identityElementIndex, ": ", path, " (", pathCheck, ")."), metadataPath, null);
 
                     // getting identity node
-                    var identityNode = Content.LoadAsync(path).GetAwaiter().GetResult();
+                    var repository = content.Repository ?? throw new InvalidOperationException("Repository access is not available during permission import.");
+                    var identityNode = repository.LoadContentAsync(path, CancellationToken.None).GetAwaiter().GetResult();
                     if (identityNode == null)
                     {
                         //throw new Exception($"Identity {path} was not found: {path}. {metadataPath}");
@@ -326,7 +546,7 @@ namespace SnLiveExportImport.ContentImporter
                     }
                     sprList.Add(spr);
                 }
-                SecurityManager.SetPermissionsAsync(content.Id, sprList.ToArray());
+                SecurityManager.SetPermissionsAsync(content.Id, sprList.ToArray()).GetAwaiter().GetResult();
                 result = true;
             }
 
