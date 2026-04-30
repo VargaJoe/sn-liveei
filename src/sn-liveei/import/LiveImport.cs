@@ -270,6 +270,12 @@ namespace SnLiveExportImport
                     continue;
                 }
 
+                if (Program._appConfig.ExcludedContentTypes?.Any(t => string.Equals(t, contentInfo.ContentTypeName, StringComparison.OrdinalIgnoreCase)) == true)
+                {
+                    Log.Information($"Skipped (ExcludedContentType): {contentInfo.Name} : {contentInfo.ContentTypeName}");
+                    continue;
+                }
+
                 bool isNewContent = true;
                 Content content = null;
                 try

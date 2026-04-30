@@ -31,6 +31,7 @@ namespace SnLiveExportImport
         public string ContinueFrom { get; set; }
         public string XsltPath { get; set; }
         public string[] FileTypes { get; set; }
+        public string[] ExcludedContentTypes { get; set; }
         public string[] ExcludedImportFields { get; set; }
         public string[] ExcludedExportFields { get; set; }
         public IRepository Repository { get; private set; }
@@ -70,6 +71,7 @@ namespace SnLiveExportImport
                 this.TreeExport = all;
 
             this.FileTypes = _config.GetSection("sensenet:LiveExportImport:FileTypes").Get<string[]>();
+            this.ExcludedContentTypes = _config.GetSection("sensenet:LiveExportImport:ExcludedContentTypes").Get<string[]>() ?? Array.Empty<string>();
             var configuredExcludedImportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedImportFields").Get<string[]>() ?? Array.Empty<string>();
             var defaultExcludedImportFields = new[]
             {
