@@ -10,8 +10,13 @@ using System.Threading;
 
 namespace SnLiveExportImport
 {
+    using IOFile = System.IO.File;
+
     public static class LiveImport
     {
+        private static readonly CancellationToken NoCancellation = CancellationToken.None;
+        private static IRepository _repository;
+
         public static void ImportContent()
         {
             CreateRefLog(string.IsNullOrEmpty(Program._appConfig.ContinueFrom));
@@ -41,7 +46,7 @@ namespace SnLiveExportImport
             Log.Information($"combined path: {cbPath}");
             Log.Information($"filesystem path: {fsPath}");
 
-            if (syncmode && File.Exists(fsPath + ".Content"))
+            if (syncmode && IOFile.Exists(fsPath + ".Content"))
             {
                 Log.Information($"file exists: {fsPath}.Content");
 
@@ -55,7 +60,8 @@ namespace SnLiveExportImport
 
             if (!string.IsNullOrWhiteSpace(targetRepoPath))
             {
-                var isTargetExists = Content.ExistsAsync(targetRepoPath).GetAwaiter().GetResult();
+                var repository = GetRepository();
+                var isTargetExists = repository.IsContentExistsAsync(targetRepoPath, NoCancellation).GetAwaiter().GetResult();
                 if (!isTargetExists)
                 {
                     Log.Warning($"Target container was not found: {targetRepoPath}");
@@ -73,6 +79,7 @@ namespace SnLiveExportImport
             if (ctdPath != null && Directory.Exists(ctdPath))
             {
                 Log.Information($"Importing content types: {ctdPath}");
+                var repository = GetRepository();
 
                 //ContentTypeInstaller importer = ContentTypeInstaller.CreateBatchContentTypeInstaller();
                 var ctdFiles = Directory.GetFiles(ctdPath, "*.xml");
@@ -96,7 +103,13 @@ namespace SnLiveExportImport
                             Log.Information($"  {Path.GetFileName(ctdFilePath)}");
                             //importer.AddContentType(stream);
                             Thread.Sleep(1000);
-                            var ctdContent = Content.UploadAsync("/Root/System/Schema/ContentTypes", ctdName, fStream, "ContentType").GetAwaiter().GetResult();
+                            repository.UploadAsync(new UploadRequest
+                            {
+                                ParentPath = "/Root/System/Schema/ContentTypes",
+                                ContentName = ctdName,
+                                ContentType = "ContentType",
+                                FileName = ctdName
+                            }, fStream, NoCancellation).GetAwaiter().GetResult();
                             //Thread.Sleep(100);
                         }
                         catch (ApplicationException e)
@@ -147,7 +160,7 @@ namespace SnLiveExportImport
         private static void ImportContents(string srcPath, string targetPath, bool validate)
         {
             bool pathIsFile = false;
-            if (File.Exists(srcPath))
+            if (IOFile.Exists(srcPath))
             {
                 pathIsFile = true;
             }
@@ -257,6 +270,12 @@ namespace SnLiveExportImport
                     continue;
                 }
 
+                if (Program._appConfig.ExcludedContentTypes?.Any(t => string.Equals(t, contentInfo.ContentTypeName, StringComparison.OrdinalIgnoreCase)) == true)
+                {
+                    Log.Information($"Skipped (ExcludedContentType): {contentInfo.Name} : {contentInfo.ContentTypeName}");
+                    continue;
+                }
+
                 bool isNewContent = true;
                 Content content = null;
                 try
@@ -314,7 +333,17 @@ namespace SnLiveExportImport
                         if (!(contentInfo.HasReference || contentInfo.HasPermissions || contentInfo.HasBreakPermissions))
                         {
                            // here should RemoveBreakInheritance from content
-                           content.UnbreakInheritanceAsync();
+                           if (content.Id > 0)
+                           {
+                               try
+                               {
+                                   content.UnbreakInheritanceAsync().GetAwaiter().GetResult();
+                               }
+                               catch (Exception ex)
+                               {
+                                   Log.Warning($"Failed to clear permission inheritance for '{content.Path ?? contentInfo.Name}': {ex.Message}");
+                               }
+                           }
                         }
                     }
                     if (contentInfo.HasReference || contentInfo.HasPermissions || contentInfo.HasBreakPermissions)
@@ -339,24 +368,37 @@ namespace SnLiveExportImport
 
         private static Content CreateOrLoadContent(ContentInfo contentInfo, string targetRepoParentPath, ref bool isNewContent)
         {
+            var repository = GetRepository();
             string path = RepositoryPath.Combine(targetRepoParentPath, contentInfo.Name);
             isNewContent = false;
-            Content content = Content.LoadAsync(path).GetAwaiter().GetResult();
+            Content content = repository.LoadContentAsync(path, NoCancellation).GetAwaiter().GetResult();
             if (content == null)
             {
                 // need list of nodetypes descended from file
                 if (!Program._appConfig.FileTypes.Any(f => f == contentInfo.ContentTypeName))
                 {
-                    content = Content.CreateNew(targetRepoParentPath, contentInfo.ContentTypeName, contentInfo.Name);
+                    content = repository.CreateContent(targetRepoParentPath, contentInfo.ContentTypeName, contentInfo.Name);
                     isNewContent = true;
                 }
                 else
                 {
                     string filePath = contentInfo.Attachments.Count > 0 ? Path.Combine(Path.GetDirectoryName(contentInfo.MetaDataPath), contentInfo.Attachments[0]) : contentInfo.MetaDataPath;
-                    using (FileStream fs = File.OpenRead(filePath))
+                    using (FileStream fs = IOFile.OpenRead(filePath))
                     {
                         Thread.Sleep(1000);
-                        content = Content.UploadAsync(targetRepoParentPath, contentInfo.Name, fs, contentInfo.ContentTypeName).GetAwaiter().GetResult();
+                        var uploadResult = repository.UploadAsync(new UploadRequest
+                        {
+                            ParentPath = targetRepoParentPath,
+                            ContentName = contentInfo.Name,
+                            ContentType = contentInfo.ContentTypeName,
+                            FileName = contentInfo.Name
+                        }, fs, NoCancellation).GetAwaiter().GetResult();
+
+                        content = ReloadUploadedContent(repository, uploadResult, targetRepoParentPath, contentInfo.Name);
+
+                        if (content == null)
+                            throw new ApplicationException($"Upload succeeded but the uploaded content could not be reloaded. Parent: {targetRepoParentPath}, Name: {contentInfo.Name}, UploadResult.Id: {uploadResult?.Id}, UploadResult.Url: {uploadResult?.Url}");
+
                         //Thread.Sleep(100);
                         isNewContent = true;
                     }
@@ -396,14 +438,14 @@ namespace SnLiveExportImport
 
             LogWriteLine($"  {contentInfo.Name}");
 
-            Content content = Content.LoadAsync(contentId).GetAwaiter().GetResult();
+            Content content = GetRepository().LoadContentAsync(contentId, NoCancellation).GetAwaiter().GetResult();
             if (content != null)
             {
                 try
                 {
                     if (contentInfo.UpdateReferences(content, validate))
                     {
-                        content.SaveAsync().GetAwaiter().GetResult();
+                        content.SaveAsync(NoCancellation).GetAwaiter().GetResult();
                         Thread.Sleep(100);
                     }
                 }
@@ -434,7 +476,7 @@ namespace SnLiveExportImport
         private static void CreateRefLog(bool createNew)
         {
             _refLogFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "import.reflog");
-            if (!File.Exists(_refLogFilePath) || createNew)
+            if (!IOFile.Exists(_refLogFilePath) || createNew)
             {
                 using (FileStream fs = new FileStream(_refLogFilePath, FileMode.Create))
                 {
@@ -490,6 +532,80 @@ namespace SnLiveExportImport
         {
             Log.Error($"{e.GetType().Name}: {e.Message}");
             Log.Error(e.StackTrace);
+        }
+
+        private static IRepository GetRepository()
+        {
+            if (_repository != null)
+                return _repository;
+
+            _repository = Program._appConfig.Repository
+                ?? throw new InvalidOperationException("Could not initialize repository access.");
+            return _repository;
+        }
+
+        private static Content ReloadUploadedContent(IRepository repository, UploadResult uploadResult, string parentPath, string contentName)
+        {
+            var candidatePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (!string.IsNullOrWhiteSpace(parentPath) && !string.IsNullOrWhiteSpace(contentName))
+                candidatePaths.Add(RepositoryPath.Combine(parentPath, contentName));
+
+            var normalizedUrlPath = NormalizeRepositoryPath(uploadResult?.Url);
+            if (!string.IsNullOrWhiteSpace(normalizedUrlPath))
+            {
+                candidatePaths.Add(normalizedUrlPath);
+
+                var decodedPath = Uri.UnescapeDataString(normalizedUrlPath);
+                if (!string.IsNullOrWhiteSpace(decodedPath))
+                    candidatePaths.Add(decodedPath);
+            }
+
+            const int maxAttempts = 5;
+            for (var attempt = 0; attempt < maxAttempts; attempt++)
+            {
+                if (uploadResult?.Id > 0)
+                {
+                    var byId = repository.LoadContentAsync(uploadResult.Id, NoCancellation).GetAwaiter().GetResult();
+                    if (byId != null)
+                        return byId;
+                }
+
+                foreach (var path in candidatePaths)
+                {
+                    var byPath = repository.LoadContentAsync(path, NoCancellation).GetAwaiter().GetResult();
+                    if (byPath != null)
+                        return byPath;
+                }
+
+                if (attempt < maxAttempts - 1)
+                    Thread.Sleep(200);
+            }
+
+            return null;
+        }
+
+        private static string NormalizeRepositoryPath(string uploadUrl)
+        {
+            if (string.IsNullOrWhiteSpace(uploadUrl))
+                return null;
+
+            var path = uploadUrl;
+            if (Uri.TryCreate(uploadUrl, UriKind.Absolute, out var absoluteUri))
+                path = absoluteUri.AbsolutePath;
+
+            var queryIndex = path.IndexOf('?');
+            if (queryIndex >= 0)
+                path = path.Substring(0, queryIndex);
+
+            const string odataPrefix = "/odata.svc";
+            if (path.StartsWith(odataPrefix, StringComparison.OrdinalIgnoreCase))
+                path = path.Substring(odataPrefix.Length);
+
+            if (!path.StartsWith("/"))
+                path = "/" + path;
+
+            return path;
         }
 
         ////End of Logging

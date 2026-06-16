@@ -1,10 +1,10 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using SenseNet.Client;
-using System.Net.Http;
+using SenseNet.Extensions.DependencyInjection;
+using System;
+using System.Linq;
 using System.Threading.Tasks;
-using IdentityModel.Client;
-using Microsoft.AspNetCore.SignalR;
-using System.Collections.Generic;
 
 namespace SnLiveExportImport
 {
@@ -15,6 +15,7 @@ namespace SnLiveExportImport
         public string BaseURL { get; set; }
         public string ClientId { get; set; }
         public string ClientSecret { get; set; }
+        public string ApiKey { get; set; }
         public string Scope { get; set; }
         public string ApiSecretToken { get; set; }
         public bool RequireHttpsMetadata { get; set; }
@@ -28,9 +29,12 @@ namespace SnLiveExportImport
         public bool SyncMode { get; set; }
         public bool TreeExport { get; set; }
         public string ContinueFrom { get; set; }
+        public string XsltPath { get; set; }
         public string[] FileTypes { get; set; }
+        public string[] ExcludedContentTypes { get; set; }
         public string[] ExcludedImportFields { get; set; }
         public string[] ExcludedExportFields { get; set; }
+        public IRepository Repository { get; private set; }
 
 
         public AppConfigRepository(IConfiguration config)
@@ -45,6 +49,10 @@ namespace SnLiveExportImport
         private void Initalize()
         {
             this.ApiSecretToken = _config["ApiSecretToken"];
+            this.ApiKey = _config["sensenet:Authentication:ApiKey"];
+            if (string.IsNullOrWhiteSpace(this.ApiKey))
+                this.ApiKey = this.ApiSecretToken;
+
             this.AuthURL = _config["sensenet:Authentication:Authority"];
             this.BaseURL = _config["sensenet:RepositoryUrl"];
             this.ClientId = _config["sensenet:Authentication:ClientId"];
@@ -54,6 +62,7 @@ namespace SnLiveExportImport
             this.Mode = _config["sensenet:LiveExportImport:Mode"];
             this.RepoPath = _config["sensenet:LiveExportImport:RepoPath"];
             this.LocalPath = _config["sensenet:LiveExportImport:LocalPath"];
+            this.XsltPath = _config["sensenet:LiveExportImport:XsltPath"];
 
             if (bool.TryParse(_config["sensenet:LiveExportImport:SyncMode"], out bool syncmode))
                 this.SyncMode = syncmode;
@@ -62,7 +71,22 @@ namespace SnLiveExportImport
                 this.TreeExport = all;
 
             this.FileTypes = _config.GetSection("sensenet:LiveExportImport:FileTypes").Get<string[]>();
-            this.ExcludedImportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedImportFields").Get<string[]>();
+            this.ExcludedContentTypes = _config.GetSection("sensenet:LiveExportImport:ExcludedContentTypes").Get<string[]>() ?? Array.Empty<string>();
+            var configuredExcludedImportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedImportFields").Get<string[]>() ?? Array.Empty<string>();
+            var defaultExcludedImportFields = new[]
+            {
+                // Frequently server-managed fields that may cause save/update issues during migration import.
+                "Hidden",
+                "Index",
+                "EnableLifespan",
+                "ValidFrom",
+                "ValidTill"
+            };
+            this.ExcludedImportFields = configuredExcludedImportFields
+                .Concat(defaultExcludedImportFields)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             this.ExcludedExportFields = _config.GetSection("sensenet:LiveExportImport:ExcludedExportFields").Get<string[]>();
             
             var requireHttpsMetadataString = _config["RequireHttpsMetadata"];
@@ -73,46 +97,34 @@ namespace SnLiveExportImport
             }
         }
 
-        private async Task AppLogin()
+        private Task AppLogin()
         {
             var server = new ServerContext()
             {
-                Url = _config["sensenet:RepositoryUrl"]
+                Url = this.BaseURL
             };
 
-            server.Authentication.AccessToken = await GetTokenAsync(_config);
+            if (string.IsNullOrWhiteSpace(this.ApiKey))
+                throw new InvalidOperationException("Missing authentication configuration. Set sensenet:Authentication:ApiKey (or legacy ApiSecretToken) in appsettings/environment variables.");
+
+            server.Authentication.ApiKey = this.ApiKey;
+
+            // Build a repository instance through the supported DI pipeline.
+            var services = new ServiceCollection();
+            services.AddSenseNetClient()
+                .ConfigureSenseNetRepository(options =>
+                {
+                    options.Url = this.BaseURL;
+                    options.Authentication.ApiKey = this.ApiKey;
+                });
+            var serviceProvider = services.BuildServiceProvider();
+            var repositoryCollection = serviceProvider.GetRequiredService<IRepositoryCollection>();
+            this.Repository = repositoryCollection.GetRepositoryAsync(System.Threading.CancellationToken.None).GetAwaiter().GetResult();
 
             ClientContext.Current.ChunkSizeInBytes = 512000;
             ClientContext.Current.AddServer(server);
-        }
 
-        private async Task<string> GetTokenAsync(IConfiguration config)
-        {
-            var authority = config["sensenet:Authentication:Authority"];
-
-            var client = new HttpClient();
-            var disco = await client.GetDiscoveryDocumentAsync(authority);
-            if (disco.IsError)
-            {
-                return string.Empty;
-            }
-
-            // request token
-            var tokenResponse = await client.RequestClientCredentialsTokenAsync(new ClientCredentialsTokenRequest
-            {
-                Address = disco.TokenEndpoint,
-
-                ClientId = config["sensenet:Authentication:ClientId"],
-                ClientSecret = config["sensenet:Authentication:ClientSecret"],
-                Scope = config["sensenet:Authentication:Scope"]
-            });
-
-            if (tokenResponse.IsError)
-            {
-                return string.Empty;
-            }
-
-            return tokenResponse.AccessToken;
+            return Task.CompletedTask;
         }
     }
 }
